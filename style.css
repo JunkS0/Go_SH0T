@@ -1261,106 +1261,120 @@ body {
   .skill-icon { font-size: 18px; }
 }
 
-/* ── 채팅 패널 ───────────────────────────────── */
-.chat-panel {
+/* ── 채팅 (발로란트 스타일, 왼쪽 하단 고정) ─── */
+#chatArea {
   position: absolute;
-  bottom: 80px;
+  bottom: 70px;
   left: 12px;
-  width: 360px;
+  width: 380px;
   max-width: calc(100vw - 24px);
-  flex-direction: column;
-  gap: 6px;
-  background: rgba(10, 14, 20, 0.88);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 8px;
-  padding: 10px 10px 8px;
-  backdrop-filter: blur(6px);
-  z-index: 60;
-  display: none;
-}
-
-.chat-log {
-  max-height: 180px;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.15) transparent;
+  gap: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+
+#chatLog {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 200px;
+  overflow: hidden;
+  padding: 4px 0;
 }
 
 .chat-line {
-  font-size: 12px;
-  line-height: 1.4;
-  color: #dde4ec;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #e8edf3;
   word-break: break-all;
+  padding: 1px 6px;
+  border-radius: 2px;
+  background: rgba(0,0,0,0.45);
+  pointer-events: none;
+  animation: chat-fade 12s ease forwards;
 }
 
-.chat-self { opacity: 0.75; }
+@keyframes chat-fade {
+  0%   { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+#chatArea.open .chat-line {
+  animation: none;
+  opacity: 1;
+}
 
 .chat-badge-team {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   color: #4fc3f7;
-  margin-right: 4px;
+  margin-right: 5px;
 }
 
 .chat-badge-all {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   color: #ffcc00;
-  margin-right: 4px;
+  margin-right: 5px;
 }
 
 .chat-name {
   font-weight: 600;
   color: #a8c4e0;
-  margin-right: 2px;
+  margin-right: 3px;
 }
 
-.chat-input-row {
-  display: flex;
+#chatInputRow {
+  display: none;
   align-items: center;
-  gap: 6px;
+  gap: 0;
   margin-top: 4px;
+  pointer-events: all;
+  background: rgba(8, 12, 18, 0.82);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 3px;
+  overflow: hidden;
 }
 
-.chat-mode-label {
+#chatModeLabel {
   font-size: 11px;
   font-weight: 700;
   color: #4fc3f7;
-  min-width: 26px;
-  text-align: center;
-  background: rgba(255,255,255,0.06);
-  border-radius: 4px;
-  padding: 2px 5px;
+  padding: 6px 8px;
+  background: rgba(79,195,247,0.1);
+  border-right: 1px solid rgba(255,255,255,0.1);
+  white-space: nowrap;
   flex-shrink: 0;
+  user-select: none;
 }
 
 #chatInput {
   flex: 1;
-  background: rgba(255,255,255,0.07);
-  border: 1px solid rgba(255,255,255,0.18);
-  border-radius: 5px;
+  background: transparent;
+  border: none;
   color: #eef2f7;
   font-size: 13px;
-  padding: 5px 8px;
+  padding: 6px 10px;
   outline: none;
+  min-width: 0;
+  caret-color: #4fc3f7;
 }
 
-#chatInput:focus {
-  border-color: rgba(79, 195, 247, 0.6);
-  box-shadow: 0 0 0 2px rgba(79,195,247,0.15);
+#chatInput::placeholder {
+  color: rgba(255,255,255,0.3);
 }
 
-.chat-hint {
+#chatInputHint {
   font-size: 10px;
-  color: rgba(255,255,255,0.32);
-  text-align: center;
-  margin-top: 2px;
+  color: rgba(255,255,255,0.25);
+  padding: 0 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-/* 채팅 알림 (킬피드에 표시) */
 .chat-notif {
   color: #ffe08a;
   font-size: 12px;

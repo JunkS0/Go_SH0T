@@ -141,8 +141,9 @@ const ui = {
   mobileAscend: document.querySelector("#mobileAscend"),
   mobileHeal: document.querySelector("#mobileHeal"),
   bootNotice: document.querySelector("#bootNotice"),
-  chatPanel: document.querySelector("#chatPanel"),
+  chatArea: document.querySelector("#chatArea"),
   chatLog: document.querySelector("#chatLog"),
+  chatInputRow: document.querySelector("#chatInputRow"),
   chatInput: document.querySelector("#chatInput"),
   chatModeLabel: document.querySelector("#chatModeLabel"),
 };
@@ -854,7 +855,6 @@ function initUi() {
   makeToggle("#toggleWeapons", ui.weaponRow);
   makeToggle("#toggleServer", document.querySelector(".server-panel"));
   makeToggle("#toggleShop", document.querySelector(".shop-panel"));
-  makeToggle("#toggleChat", ui.chatPanel);
   const savedServer = getInitialServerUrl();
   ui.serverUrl.value = savedServer;
   ui.teamMode.value = localStorage.getItem("kotgunTeamMode") || "versus";
@@ -1197,26 +1197,26 @@ let chatOpen = false;
 function openChat(mode) {
   chatMode = mode;
   chatOpen = true;
-  ui.chatPanel.style.display = "flex";
+  if (document.pointerLockElement) document.exitPointerLock();
+  ui.chatInputRow.style.display = "flex";
+  ui.chatArea.classList.add("open");
   ui.chatModeLabel.textContent = mode === "team" ? "팀" : "전체";
   ui.chatModeLabel.style.color = mode === "team" ? "#4fc3f7" : "#ffcc00";
   ui.chatInput.value = "";
-  // 포인터 락 해제 후 input에 포커스
-  if (document.pointerLockElement) document.exitPointerLock();
-  // exitPointerLock은 비동기라 pointerlockchange가 뒤에 오므로
-  // 짧은 딜레이 후 포커스
-  setTimeout(() => ui.chatInput.focus(), 30);
+  ui.chatInput.disabled = false;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    ui.chatInput.focus();
+    ui.chatInput.click();
+  }));
 }
 
 function closeChat() {
   chatOpen = false;
-  ui.chatPanel.style.display = "none";
+  ui.chatInputRow.style.display = "none";
+  ui.chatArea.classList.remove("open");
   ui.chatInput.blur();
-  // "클릭해서 계속" 버튼이 떠있으면 숨기고 포인터 락 재요청
-  if (ui.start.style.display !== "none") {
-    ui.start.style.display = "none";
-  }
-  canvas.requestPointerLock();
+  ui.start.style.display = "none";
+  canvas.requestPointerLock().catch(() => {});
 }
 
 function submitChat() {
@@ -1225,29 +1225,27 @@ function submitChat() {
   if (networkStatus === "online") {
     sendNet("chat", { text, scope: chatMode });
   }
-  // 내 메시지도 로컬에 표시
   appendChatMessage(player.name, text, chatMode, true);
   closeChat();
 }
 
 function appendChatMessage(sender, text, scope, isSelf = false) {
-  const log = ui.chatLog;
+  const chatLog = ui.chatLog;
   const line = document.createElement("div");
   line.className = "chat-line" + (isSelf ? " chat-self" : "");
   const badge = document.createElement("span");
   badge.className = scope === "team" ? "chat-badge-team" : "chat-badge-all";
   badge.textContent = scope === "team" ? "[팀]" : "[전체]";
-  const name = document.createElement("span");
-  name.className = "chat-name";
-  name.textContent = sender + ": ";
+  const nameEl = document.createElement("span");
+  nameEl.className = "chat-name";
+  nameEl.textContent = sender + ": ";
   const msg = document.createElement("span");
   msg.textContent = text;
-  line.append(badge, name, msg);
-  log.appendChild(line);
-  // 최대 30줄 유지
-  while (log.children.length > 30) log.firstChild.remove();
-  log.scrollTop = log.scrollHeight;
-  // 채팅창 닫혀있으면 잠깐 킬피드에도 표시
+  line.append(badge, nameEl, msg);
+  chatLog.appendChild(line);
+  while (chatLog.children.length > 40) chatLog.firstChild.remove();
+  chatLog.scrollTop = chatLog.scrollHeight;
+  // 채팅창 닫혀있으면 킬피드에 4초 알림
   if (!chatOpen) {
     const notif = document.createElement("div");
     notif.className = "chat-notif";
@@ -1260,20 +1258,20 @@ function appendChatMessage(sender, text, scope, isSelf = false) {
 
 // 채팅 input 키 이벤트
 ui.chatInput?.addEventListener("keydown", (e) => {
+  e.stopPropagation();
   if (e.code === "Escape") { e.preventDefault(); closeChat(); return; }
   if (e.code === "Enter") {
     e.preventDefault();
     if (e.shiftKey) {
-      // Shift+Enter: 전체 채팅 전송
       chatMode = "all";
       ui.chatModeLabel.textContent = "전체";
       ui.chatModeLabel.style.color = "#ffcc00";
     }
     submitChat();
   }
-  // 채팅 중엔 게임 키 막기
-  e.stopPropagation();
 });
+ui.chatInput?.addEventListener("keyup", (e) => e.stopPropagation());
+ui.chatInput?.addEventListener("keypress", (e) => e.stopPropagation());
 
 function setNetStatus(status, text) {
   networkStatus = status;
@@ -2683,7 +2681,7 @@ window.addEventListener("mousedown", (event) => {
     log("마우스가 풀렸습니다. 버튼을 누른 뒤 가운데 시작 버튼으로 복귀하세요.");
     return;
   }
-  if (event.target.closest?.(".server-panel, .shop-panel, .weapon-row, .chat-panel")) return;
+  if (event.target.closest?.(".server-panel, .shop-panel, .weapon-row, #chatArea")) return;
   if (document.pointerLockElement !== canvas) return;
   if (event.button === 0) beginFire();
   if (event.button === 2) {
