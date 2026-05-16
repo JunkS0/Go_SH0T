@@ -1201,15 +1201,22 @@ function openChat(mode) {
   ui.chatModeLabel.textContent = mode === "team" ? "팀" : "전체";
   ui.chatModeLabel.style.color = mode === "team" ? "#4fc3f7" : "#ffcc00";
   ui.chatInput.value = "";
-  ui.chatInput.focus();
-  // 포인터 락 해제
+  // 포인터 락 해제 후 input에 포커스
   if (document.pointerLockElement) document.exitPointerLock();
+  // exitPointerLock은 비동기라 pointerlockchange가 뒤에 오므로
+  // 짧은 딜레이 후 포커스
+  setTimeout(() => ui.chatInput.focus(), 30);
 }
 
 function closeChat() {
   chatOpen = false;
   ui.chatPanel.style.display = "none";
   ui.chatInput.blur();
+  // "클릭해서 계속" 버튼이 떠있으면 숨기고 포인터 락 재요청
+  if (ui.start.style.display !== "none") {
+    ui.start.style.display = "none";
+  }
+  canvas.requestPointerLock();
 }
 
 function submitChat() {
@@ -2718,8 +2725,10 @@ ui.start.addEventListener("click", async () => {
 document.addEventListener("pointerlockchange", () => {
   if (document.pointerLockElement !== canvas) {
     endFire();
-    ui.start.style.display = "block";
-    ui.start.querySelector("span").textContent = "클릭해서 계속";
+    if (!chatOpen) {
+      ui.start.style.display = "block";
+      ui.start.querySelector("span").textContent = "클릭해서 계속";
+    }
   }
 });
 
