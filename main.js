@@ -991,6 +991,7 @@ function startPrep() {
     localDeathModel = null;
   }
   camera.position.copy(player.position);
+  player.killCount = 0;
   bots.forEach(respawnBot);
   buyAiLoadouts();
   refreshWeaponCards();
@@ -1788,12 +1789,29 @@ function botDefuse(bot, index, time) {
 }
 
 
+function botCanSeePlayer(bot) {
+  // 봇 눈 위치 → 플레이어 머리 위치로 레이캐스트
+  const botEye = bot.group.position.clone().add(new THREE.Vector3(0, 1.6, 0));
+  const playerHead = player.position.clone().add(new THREE.Vector3(0, 1.6, 0));
+  const dir = playerHead.clone().sub(botEye).normalize();
+  const dist = botEye.distanceTo(playerHead);
+
+  const sightRay = new THREE.Raycaster(botEye, dir, 0, dist);
+  const wallHits = sightRay.intersectObjects(solidTargets, false);
+  // 벽에 막히면 못 봄
+  return wallHits.length === 0;
+}
+
 function botShoot(bot, time) {
   if (match.phase !== "combat" || !player.alive || player.team === "defense" || bot.level !== player.level) return;
   const weapon = weapons[bot.weaponIndex] ?? weapons[1];
   const distance = bot.group.position.distanceTo(player.position);
   const maxRange = weapon.name === "저격" ? 76 : weapon.name === "기관총" || weapon.name === "소총" ? 54 : 38;
   if (distance > maxRange || time - bot.lastShot < 1 / Math.max(0.7, weapon.rate * 0.42)) return;
+
+  // 시야 체크 - 못 보면 쏘지 않음
+  if (!botCanSeePlayer(bot)) return;
+
   bot.lastShot = time;
   const accuracy =
     weapon.name === "저격" ? 0.62 :
