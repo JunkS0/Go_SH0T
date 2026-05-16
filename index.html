@@ -175,8 +175,18 @@
 
         <button id="startButton" type="button">
           <span>클릭해서 계속</span>
-          <small>WASD 이동 · Space 점프 · Q 상승 · E 대쉬 · X 회복 · G 엘리베이터 · F 폭탄 · 1-6 무기</small>
+          <small>WASD 이동 · Space 점프 · Q 상승 · E 대쉬 · X 회복 · G 엘리베이터 · F 폭탄 · 1-6 무기 · T 팀채팅 · Y 전체채팅</small>
         </button>
+
+        <!-- 채팅 패널 -->
+        <div class="panel chat-panel" id="chatPanel" style="display:none">
+          <div class="chat-log" id="chatLog"></div>
+          <div class="chat-input-row">
+            <span class="chat-mode-label" id="chatModeLabel">팀</span>
+            <input id="chatInput" type="text" placeholder="메시지 입력..." maxlength="80" autocomplete="off" />
+          </div>
+          <div class="chat-hint" id="chatHint">Enter: 팀 채팅 전송 &nbsp;|&nbsp; Shift+Enter: 전체 채팅 전송 &nbsp;|&nbsp; Esc: 닫기</div>
+        </div>
 
         <div class="panel server-panel">
           <label for="serverUrl">멀티 서버</label>
@@ -197,6 +207,7 @@
       <button class="ui-toggle-btn" id="toggleWeapons" type="button">🔫 무기</button>
       <button class="ui-toggle-btn" id="toggleServer" type="button">🌐 서버</button>
       <button class="ui-toggle-btn" id="toggleShop" type="button">🛒 상점</button>
+      <button class="ui-toggle-btn" id="toggleChat" type="button">💬 채팅</button>
     </div>
 
     <script>

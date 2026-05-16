@@ -141,6 +141,10 @@ const ui = {
   mobileAscend: document.querySelector("#mobileAscend"),
   mobileHeal: document.querySelector("#mobileHeal"),
   bootNotice: document.querySelector("#bootNotice"),
+  chatPanel: document.querySelector("#chatPanel"),
+  chatLog: document.querySelector("#chatLog"),
+  chatInput: document.querySelector("#chatInput"),
+  chatModeLabel: document.querySelector("#chatModeLabel"),
 };
 
 const weapons = [
@@ -850,6 +854,7 @@ function initUi() {
   makeToggle("#toggleWeapons", ui.weaponRow);
   makeToggle("#toggleServer", document.querySelector(".server-panel"));
   makeToggle("#toggleShop", document.querySelector(".shop-panel"));
+  makeToggle("#toggleChat", ui.chatPanel);
   const savedServer = getInitialServerUrl();
   ui.serverUrl.value = savedServer;
   ui.teamMode.value = localStorage.getItem("kotgunTeamMode") || "versus";
@@ -1185,6 +1190,84 @@ function log(text) {
   while (ui.log.children.length > 7) ui.log.lastChild.remove();
 }
 
+// ── 채팅 ──────────────────────────────────────────────
+let chatMode = "team"; // "team" | "all"
+let chatOpen = false;
+
+function openChat(mode) {
+  chatMode = mode;
+  chatOpen = true;
+  ui.chatPanel.style.display = "flex";
+  ui.chatModeLabel.textContent = mode === "team" ? "팀" : "전체";
+  ui.chatModeLabel.style.color = mode === "team" ? "#4fc3f7" : "#ffcc00";
+  ui.chatInput.value = "";
+  ui.chatInput.focus();
+  // 포인터 락 해제
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+
+function closeChat() {
+  chatOpen = false;
+  ui.chatPanel.style.display = "none";
+  ui.chatInput.blur();
+}
+
+function submitChat() {
+  const text = ui.chatInput.value.trim();
+  if (!text) { closeChat(); return; }
+  if (networkStatus === "online") {
+    sendNet("chat", { text, scope: chatMode });
+  }
+  // 내 메시지도 로컬에 표시
+  appendChatMessage(player.name, text, chatMode, true);
+  closeChat();
+}
+
+function appendChatMessage(sender, text, scope, isSelf = false) {
+  const log = ui.chatLog;
+  const line = document.createElement("div");
+  line.className = "chat-line" + (isSelf ? " chat-self" : "");
+  const badge = document.createElement("span");
+  badge.className = scope === "team" ? "chat-badge-team" : "chat-badge-all";
+  badge.textContent = scope === "team" ? "[팀]" : "[전체]";
+  const name = document.createElement("span");
+  name.className = "chat-name";
+  name.textContent = sender + ": ";
+  const msg = document.createElement("span");
+  msg.textContent = text;
+  line.append(badge, name, msg);
+  log.appendChild(line);
+  // 최대 30줄 유지
+  while (log.children.length > 30) log.firstChild.remove();
+  log.scrollTop = log.scrollHeight;
+  // 채팅창 닫혀있으면 잠깐 킬피드에도 표시
+  if (!chatOpen) {
+    const notif = document.createElement("div");
+    notif.className = "chat-notif";
+    notif.textContent = `${scope === "team" ? "[팀]" : "[전체]"} ${sender}: ${text}`;
+    ui.log.prepend(notif);
+    setTimeout(() => notif.remove(), 4000);
+    while (ui.log.children.length > 7) ui.log.lastChild.remove();
+  }
+}
+
+// 채팅 input 키 이벤트
+ui.chatInput?.addEventListener("keydown", (e) => {
+  if (e.code === "Escape") { e.preventDefault(); closeChat(); return; }
+  if (e.code === "Enter") {
+    e.preventDefault();
+    if (e.shiftKey) {
+      // Shift+Enter: 전체 채팅 전송
+      chatMode = "all";
+      ui.chatModeLabel.textContent = "전체";
+      ui.chatModeLabel.style.color = "#ffcc00";
+    }
+    submitChat();
+  }
+  // 채팅 중엔 게임 키 막기
+  e.stopPropagation();
+});
+
 function setNetStatus(status, text) {
   networkStatus = status;
   ui.net.textContent = text;
@@ -1493,6 +1576,9 @@ function handleNetMessage(message) {
     } else {
       updateRemote(message.id, message.state, message.name);
     }
+  }
+  if (message.type === "chat") {
+    appendChatMessage(message.sender, message.text, message.scope);
   }
 }
 
@@ -2564,6 +2650,8 @@ function initMobileControls() {
 
 window.addEventListener("resize", resize);
 window.addEventListener("keydown", (event) => {
+  // 채팅창 열려있으면 게임 키 무시
+  if (chatOpen) return;
   keys.add(event.code);
   const number = Number(event.key);
   if (number >= 1 && number <= 6) handleWeaponSlot(number - 1);
@@ -2572,6 +2660,8 @@ window.addEventListener("keydown", (event) => {
   if (event.code === "KeyQ") useSkillAscend();
   if (event.code === "KeyX") useSkillHeal();
   if (event.code === "KeyF") plantBomb();
+  if (event.code === "KeyT") { event.preventDefault(); openChat("team"); }
+  if (event.code === "KeyY") { event.preventDefault(); openChat("all"); }
   if (event.code === "Space") {
     event.preventDefault();
     jump();
@@ -2586,7 +2676,7 @@ window.addEventListener("mousedown", (event) => {
     log("마우스가 풀렸습니다. 버튼을 누른 뒤 가운데 시작 버튼으로 복귀하세요.");
     return;
   }
-  if (event.target.closest?.(".server-panel, .shop-panel, .weapon-row")) return;
+  if (event.target.closest?.(".server-panel, .shop-panel, .weapon-row, .chat-panel")) return;
   if (document.pointerLockElement !== canvas) return;
   if (event.button === 0) beginFire();
   if (event.button === 2) {

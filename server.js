@@ -259,6 +259,19 @@ function handleMessage(client, message) {
   }
 
   if (message.type === "hit") applyHit(client, message);
+
+  if (message.type === "chat") {
+    const text = String(message.text ?? "").slice(0, 80);
+    const scope = message.scope === "team" ? "team" : "all";
+    if (scope === "all") {
+      broadcast({ type: "chat", sender: client.name, text, scope: "all" });
+    } else {
+      // 팀 채팅: 같은 팀에게만
+      clients.forEach((c) => {
+        if (c.team === client.team) send(c, { type: "chat", sender: client.name, text, scope: "team" });
+      });
+    }
+  }
 }
 
 function send(client, payload) {
