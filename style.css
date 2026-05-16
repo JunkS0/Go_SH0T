@@ -1119,3 +1119,144 @@ body {
   .mm-vs-badge { font-size: 18px; }
   .mm-logo { font-size: 26px; }
 }
+
+/* ===== 스킬 바 ===== */
+.skill-bar {
+  position: absolute;
+  bottom: 98px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.skill-slot {
+  position: relative;
+  width: 68px;
+  height: 68px;
+  border: 2px solid rgba(255,255,255,0.18);
+  border-radius: 12px;
+  background: rgba(18, 15, 16, 0.82);
+  backdrop-filter: blur(10px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.skill-slot.ready {
+  border-color: #ffbe70;
+  background: rgba(255, 190, 112, 0.15);
+  box-shadow: 0 0 14px rgba(255, 190, 112, 0.35);
+}
+
+.skill-slot.empty {
+  opacity: 0.42;
+  border-color: rgba(255,255,255,0.08);
+}
+
+.skill-slot.active-anim {
+  animation: skill-flash 0.3s ease;
+}
+
+@keyframes skill-flash {
+  0%   { background: rgba(255,190,112,0.55); }
+  100% { background: rgba(18,15,16,0.82); }
+}
+
+.skill-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.skill-key {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  font-size: 10px;
+  font-weight: 900;
+  color: #ffbe70;
+  line-height: 1;
+}
+
+.skill-label {
+  font-size: 10px;
+  color: #c8bdae;
+  line-height: 1;
+}
+
+.skill-charge {
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff3d8;
+  line-height: 1;
+}
+
+.skill-cd-ring {
+  position: absolute;
+  inset: -2px;
+  pointer-events: none;
+}
+
+.skill-cd-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.ring-bg {
+  fill: none;
+  stroke: rgba(255,255,255,0.07);
+  stroke-width: 2.5;
+}
+
+.ring-fill {
+  fill: none;
+  stroke: #ffbe70;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 94.25;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 0.1s linear;
+}
+
+/* 대쉬 중 무적 인디케이터 */
+.dash-invincible-bar {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(220px, 60vw);
+  text-align: center;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: rgba(255, 190, 112, 0.22);
+  border: 1px solid #ffbe70;
+  color: #ffbe70;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  pointer-events: none;
+  display: none;
+}
+
+.dash-invincible-bar.active { display: block; }
+
+/* 회복 이펙트 */
+@keyframes heal-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(80,220,120,0.7); }
+  100% { box-shadow: 0 0 0 24px rgba(80,220,120,0); }
+}
+
+.heal-flash {
+  animation: heal-pulse 0.5s ease forwards;
+}
+
+@media (max-width: 760px) {
+  .skill-bar { bottom: 292px; gap: 6px; }
+  .skill-slot { width: 54px; height: 54px; }
+  .skill-icon { font-size: 18px; }
+}

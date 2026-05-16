@@ -137,6 +137,9 @@ const ui = {
   mobileAim: document.querySelector("#mobileAim"),
   mobileJump: document.querySelector("#mobileJump"),
   mobilePlant: document.querySelector("#mobilePlant"),
+  mobileDash: document.querySelector("#mobileDash"),
+  mobileAscend: document.querySelector("#mobileAscend"),
+  mobileHeal: document.querySelector("#mobileHeal"),
   bootNotice: document.querySelector("#bootNotice"),
 };
 
@@ -251,6 +254,11 @@ const player = {
   spectatorTargetId: null,
   owned: new Set(["칼"]),
   team: "attack",
+  skills: {
+    dash:   { charges: 1, maxCharges: 1, killsForCharge: 2, killsSinceCharge: 0, active: false, invincible: false, endAt: 0 },
+    ascend: { charges: 1, maxCharges: 1 },
+    heal:   { charges: 0, maxCharges: 1, killsNeeded: 4, killsSinceEmpty: 0 },
+  },
 };
 
 const match = {
@@ -937,6 +945,26 @@ function addMoney(amount) {
 function registerPlayerKill() {
   player.killCount += 1;
   playKillMelody(player.killCount);
+  // 대쉬 재충전: 2킬마다 1개 (라운드 상관없이)
+  const dash = player.skills.dash;
+  if (dash.charges < dash.maxCharges) {
+    dash.killsSinceCharge += 1;
+    if (dash.killsSinceCharge >= dash.killsForCharge) {
+      dash.charges = Math.min(dash.maxCharges, dash.charges + 1);
+      dash.killsSinceCharge = 0;
+      log("⚡ 대쉬 재충전!");
+    }
+  }
+  // 회복 충전: 4킬 시 1회 충전
+  const heal = player.skills.heal;
+  if (heal.charges < heal.maxCharges) {
+    heal.killsSinceEmpty += 1;
+    if (heal.killsSinceEmpty >= heal.killsNeeded) {
+      heal.charges = 1;
+      heal.killsSinceEmpty = 0;
+      log("💊 회복 스킬 충전!");
+    }
+  }
 }
 
 function addBotMoney(amount) {
@@ -1025,6 +1053,23 @@ function startPrep() {
   }
   camera.position.copy(player.position);
   player.killCount = 0;
+  // 멀티플레이: 모든 원격 플레이어도 동시에 스폰되도록 상태 갱신
+  remotePlayers.forEach((remote) => {
+    remote.alive = true;
+    remote.deathStartedAt = 0;
+    remote.group.rotation.x = 0;
+    remote.group.visible = true;
+    // 팀 스폰 위치로 이동
+    const rSpawn = spawns[remote.team] ?? spawns.defense;
+    remote.group.position.set(rSpawn.x, LEVEL_Y.surface, rSpawn.z);
+    remote.hp = 150;
+  });
+  // 스킬 라운드 리셋 (대쉬, 상승 충전 / 회복 킬카운트 유지)
+  player.skills.dash.charges = player.skills.dash.maxCharges;
+  player.skills.dash.active = false;
+  player.skills.dash.invincible = false;
+  player.skills.dash.endAt = 0;
+  player.skills.ascend.charges = player.skills.ascend.maxCharges;
   bots.forEach(respawnBot);
   buyAiLoadouts();
   refreshWeaponCards();
@@ -1476,6 +1521,7 @@ function removeRemote(id) {
 
 function handleServerHit(message) {
   if (message.targetId === player.id) {
+    if (player.skills.dash.invincible) return; // 대쉬 무적
     player.hp = Math.max(0, message.targetHp);
     player.alive = !message.dead;
     if (message.dead) beginLocalDeath();
@@ -2031,6 +2077,7 @@ function botShoot(bot, time) {
     weapon.name === "기관총" ? 0.44 :
     weapon.name === "산탄총" ? (distance < 20 ? 0.58 : 0.24) :
     weapon.name === "고총" ? 0.38 : 0.2;
+  if (player.skills.dash.invincible) return; // 대쉬 무적
   if (Math.random() < accuracy) {
     const damage = weapon.name === "저격" ? 45 : weapon.name === "소총" ? 18 : weapon.name === "기관총" ? 14 : weapon.name === "산탄총" ? 22 : 12;
     player.hp = Math.max(0, player.hp - damage);
@@ -2179,6 +2226,169 @@ function sendStateIfNeeded(time) {
   sendNet("state", { state: makeNetworkState() });
 }
 
+
+// ===== 스킬 함수들 =====
+
+const DASH_DURATION = 0.32;   // 대쉬 지속(초) - 무적 포함
+const DASH_SPEED = 28;        // 대쉬 속도(m/s)
+const ASCEND_SPEED = 14;      // 상승 초기 속도
+
+function getWishDir() {
+  const forward = new THREE.Vector3(Math.sin(player.yaw), 0, Math.cos(player.yaw));
+  const right   = new THREE.Vector3(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
+  const wish = new THREE.Vector3();
+  if (keys.has("KeyW")) wish.add(forward.clone().multiplyScalar(-1));
+  if (keys.has("KeyS")) wish.add(forward);
+  if (keys.has("KeyA")) wish.add(right.clone().multiplyScalar(-1));
+  if (keys.has("KeyD")) wish.add(right);
+  if (mobileInput.x || mobileInput.y) {
+    wish.add(right.clone().multiplyScalar(mobileInput.x));
+    wish.add(forward.clone().multiplyScalar(mobileInput.y));
+  }
+  if (wish.lengthSq() === 0) wish.add(forward.clone().multiplyScalar(-1)); // 방향 없으면 앞
+  return wish.normalize();
+}
+
+function useSkillDash() {
+  if (!player.alive || match.phase !== "combat") return;
+  const dash = player.skills.dash;
+  if (dash.charges <= 0 || dash.active) { log("대쉬 스킬 충전이 없습니다."); return; }
+  dash.charges -= 1;
+  dash.active = true;
+  dash.invincible = true;
+  dash.endAt = performance.now() / 1000 + DASH_DURATION;
+
+  const dir = getWishDir();
+  const limit = bounds[player.level];
+
+  // 대쉬 이동 - 짧은 인터벌로 빠르게 밀어붙임
+  const steps = 12;
+  const stepSize = (DASH_SPEED * DASH_DURATION) / steps;
+  let step = 0;
+
+  function dashStep() {
+    if (step >= steps || !dash.active) { endDash(); return; }
+    step++;
+    const nextX = player.position.clone(); nextX.x += dir.x * stepSize;
+    const nextZ = player.position.clone(); nextZ.z += dir.z * stepSize;
+    nextX.y = player.position.y;
+    nextZ.y = player.position.y;
+    if (!playerCollidesAt(nextX)) player.position.x = THREE.MathUtils.clamp(nextX.x, -limit.x, limit.x);
+    if (!playerCollidesAt(nextZ)) player.position.z = THREE.MathUtils.clamp(nextZ.z, -limit.z, limit.z);
+    camera.position.set(player.position.x, player.position.y + player.jumpOffset, player.position.z);
+    setTimeout(dashStep, (DASH_DURATION * 1000) / steps);
+  }
+  dashStep();
+  log("⚡ 대쉬! 무적 상태");
+}
+
+function endDash() {
+  const dash = player.skills.dash;
+  dash.active = false;
+  dash.invincible = false;
+}
+
+function useSkillAscend() {
+  if (!player.alive || match.phase !== "combat") return;
+  const asc = player.skills.ascend;
+  if (asc.charges <= 0) { log("상승 스킬 충전이 없습니다."); return; }
+  asc.charges -= 1;
+  player.velocityY = ASCEND_SPEED;
+  player.grounded = false;
+  log("🚀 상승!");
+}
+
+function useSkillHeal() {
+  if (!player.alive) return;
+  const heal = player.skills.heal;
+  if (heal.charges <= 0) { log("💊 회복 스킬이 없습니다. (4킬 달성 시 충전)"); return; }
+
+  const HEAL_AMOUNT = 50;
+  const HEAL_RANGE  = 8;
+
+  // 팀원 우선: 가장 가까운 팀원
+  let targetName = null;
+  let healed = false;
+
+  // 멀티: 근처 팀원 힐
+  remotePlayers.forEach((remote) => {
+    if (healed) return;
+    if (!remote.alive || remote.team !== player.team) return;
+    const dist = Math.hypot(remote.group.position.x - player.position.x, remote.group.position.z - player.position.z);
+    if (dist <= HEAL_RANGE) {
+      // 서버로 힐 알림 (시각 효과만, HP는 해당 클라이언트가 관리)
+      sendNet("skill-heal", { targetId: remote.id, amount: HEAL_AMOUNT });
+      targetName = remote.name;
+      healed = true;
+    }
+  });
+
+  // 팀원이 없거나 범위에 없으면 자신에게
+  if (!healed) {
+    player.hp = Math.min(player.armorLimit, player.hp + HEAL_AMOUNT);
+    targetName = "나";
+  }
+
+  heal.charges = 0;
+  heal.killsSinceEmpty = 0;
+  log(`💊 ${targetName}에게 +${HEAL_AMOUNT} 회복!`);
+
+  // 힐 이펙트 (화면 녹색 플래시)
+  const flash = document.createElement("div");
+  flash.style.cssText = "position:fixed;inset:0;background:rgba(80,220,120,0.18);pointer-events:none;z-index:99;animation:heal-pulse 0.5s ease forwards";
+  document.body.appendChild(flash);
+  setTimeout(() => flash.remove(), 600);
+}
+
+function updateSkillDashTimer(now) {
+  const dash = player.skills.dash;
+  if (dash.active && now >= dash.endAt) endDash();
+}
+
+function updateSkillHud() {
+  const CIRC = 94.25;
+  const now = performance.now() / 1000;
+
+  // 대쉬
+  const dash = player.skills.dash;
+  const dashEl = document.getElementById("skillDash");
+  const dashCharge = document.getElementById("dashCharge");
+  const dashRing = document.getElementById("dashRing");
+  if (dashEl && dashCharge && dashRing) {
+    dashCharge.textContent = `${dash.charges}/${dash.maxCharges}`;
+    dashEl.classList.toggle("ready", dash.charges > 0 && !dash.active);
+    dashEl.classList.toggle("empty", dash.charges === 0);
+    // 킬 진행 링
+    const prog = dash.charges < dash.maxCharges ? dash.killsSinceCharge / dash.killsForCharge : 1;
+    dashRing.style.strokeDashoffset = CIRC * (1 - prog);
+  }
+
+  // 상승
+  const asc = player.skills.ascend;
+  const ascEl = document.getElementById("skillAscend");
+  const ascCharge = document.getElementById("ascendCharge");
+  const ascRing = document.getElementById("ascendRing");
+  if (ascEl && ascCharge && ascRing) {
+    ascCharge.textContent = `${asc.charges}/${asc.maxCharges}`;
+    ascEl.classList.toggle("ready", asc.charges > 0);
+    ascEl.classList.toggle("empty", asc.charges === 0);
+    ascRing.style.strokeDashoffset = asc.charges > 0 ? 0 : CIRC;
+  }
+
+  // 회복
+  const heal = player.skills.heal;
+  const healEl = document.getElementById("skillHeal");
+  const healCharge = document.getElementById("healCharge");
+  const healRing = document.getElementById("healRing");
+  if (healEl && healCharge && healRing) {
+    healCharge.textContent = `${heal.charges}/${heal.maxCharges}`;
+    healEl.classList.toggle("ready", heal.charges > 0);
+    healEl.classList.toggle("empty", heal.charges === 0);
+    const prog = heal.charges > 0 ? 1 : heal.killsSinceEmpty / heal.killsNeeded;
+    healRing.style.strokeDashoffset = CIRC * (1 - prog);
+  }
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.04);
@@ -2194,6 +2404,8 @@ function animate() {
   updateHeldWeaponMotion(elapsed);
   updateScopeView();
   updateHud(now);
+  updateSkillHud();
+  updateSkillDashTimer(now);
   sendStateIfNeeded(elapsed);
   renderer.render(scene, camera);
 }
@@ -2308,6 +2520,9 @@ function initMobileControls() {
   bindHoldButton(ui.mobileAim, startMobileAim, stopMobileAim);
   bindHoldButton(ui.mobileJump, jump);
   bindHoldButton(ui.mobilePlant, plantBomb);
+  if (ui.mobileDash) bindHoldButton(ui.mobileDash, useSkillDash);
+  if (ui.mobileAscend) bindHoldButton(ui.mobileAscend, useSkillAscend);
+  if (ui.mobileHeal) bindHoldButton(ui.mobileHeal, useSkillHeal);
 }
 
 window.addEventListener("resize", resize);
@@ -2315,7 +2530,10 @@ window.addEventListener("keydown", (event) => {
   keys.add(event.code);
   const number = Number(event.key);
   if (number >= 1 && number <= 6) handleWeaponSlot(number - 1);
-  if (event.code === "KeyE") useElevator();
+  if (event.code === "KeyE") useSkillDash();
+  if (event.code === "KeyG") useElevator();
+  if (event.code === "KeyQ") useSkillAscend();
+  if (event.code === "KeyX") useSkillHeal();
   if (event.code === "KeyF") plantBomb();
   if (event.code === "Space") {
     event.preventDefault();

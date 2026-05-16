@@ -131,6 +131,31 @@
 
         <div class="panel killfeed" id="log"></div>
 
+        <!-- 스킬 HUD -->
+        <div class="skill-bar" id="skillBar">
+          <div class="skill-slot" id="skillDash">
+            <div class="skill-icon">⚡</div>
+            <div class="skill-key">E</div>
+            <div class="skill-label">대쉬</div>
+            <div class="skill-charge" id="dashCharge">1/1</div>
+            <div class="skill-cd-ring"><svg viewBox="0 0 36 36"><circle class="ring-bg" cx="18" cy="18" r="15"/><circle class="ring-fill" id="dashRing" cx="18" cy="18" r="15"/></svg></div>
+          </div>
+          <div class="skill-slot" id="skillAscend">
+            <div class="skill-icon">🚀</div>
+            <div class="skill-key">Q</div>
+            <div class="skill-label">상승</div>
+            <div class="skill-charge" id="ascendCharge">1/1</div>
+            <div class="skill-cd-ring"><svg viewBox="0 0 36 36"><circle class="ring-bg" cx="18" cy="18" r="15"/><circle class="ring-fill" id="ascendRing" cx="18" cy="18" r="15"/></svg></div>
+          </div>
+          <div class="skill-slot" id="skillHeal">
+            <div class="skill-icon">💊</div>
+            <div class="skill-key">X</div>
+            <div class="skill-label">회복</div>
+            <div class="skill-charge" id="healCharge">0/1</div>
+            <div class="skill-cd-ring"><svg viewBox="0 0 36 36"><circle class="ring-bg" cx="18" cy="18" r="15"/><circle class="ring-fill" id="healRing" cx="18" cy="18" r="15"/></svg></div>
+          </div>
+        </div>
+
         <div class="weapon-row" id="weaponRow"></div>
 
         <div class="mobile-controls" id="mobileControls" aria-hidden="true">
@@ -142,12 +167,15 @@
             <button id="mobileFire" type="button">발사</button>
             <button id="mobileJump" type="button">점프</button>
             <button id="mobilePlant" type="button">설치</button>
+            <button id="mobileDash" type="button">⚡대쉬</button>
+            <button id="mobileAscend" type="button">🚀상승</button>
+            <button id="mobileHeal" type="button">💊회복</button>
           </div>
         </div>
 
         <button id="startButton" type="button">
           <span>클릭해서 계속</span>
-          <small>WASD 이동 · Space 점프 · 마우스 조준 · 좌클릭 공격 · 우클릭 조준/강공격 · F 폭탄 설치 · E 엘리베이터 · 휠 버튼 UI · 1-6 무기 선택/구매</small>
+          <small>WASD 이동 · Space 점프 · Q 상승 · E 대쉬 · X 회복 · G 엘리베이터 · F 폭탄 · 1-6 무기</small>
         </button>
 
         <div class="panel server-panel">
