@@ -1,9 +1,24 @@
 const crypto = require("crypto");
+const fs = require("fs");
 const http = require("http");
+const path = require("path");
 
 const PORT = Number(process.env.PORT) || 8787;
+const PUBLIC_DIR = __dirname;
 const clients = new Map();
 let nextId = 1;
+const mimeTypes = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".wasm": "application/wasm",
+};
 
 const spawns = [
   { x: 0, z: 24, level: "surface" },
@@ -17,12 +32,34 @@ process.on("uncaughtException", (error) => console.error("Uncaught exception:", 
 process.on("unhandledRejection", (error) => console.error("Unhandled rejection:", error));
 
 const server = http.createServer((request, response) => {
-  response.writeHead(200, {
-    "content-type": "text/plain; charset=utf-8",
-    "access-control-allow-origin": "*",
-  });
-  response.end("Kotgun multiplayer server is running.\n");
+  serveStaticFile(request, response);
 });
+
+function serveStaticFile(request, response) {
+  const rawPath = new URL(request.url, "http://localhost").pathname;
+  const requestPath = rawPath === "/" ? "/index.html" : rawPath;
+  const filePath = path.normalize(path.join(PUBLIC_DIR, decodeURIComponent(requestPath)));
+
+  if (!filePath.startsWith(PUBLIC_DIR)) {
+    response.writeHead(403, { "content-type": "text/plain; charset=utf-8" });
+    response.end("Forbidden\n");
+    return;
+  }
+
+  fs.readFile(filePath, (error, data) => {
+    if (error) {
+      response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      response.end("Not found\n");
+      return;
+    }
+
+    response.writeHead(200, {
+      "content-type": mimeTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream",
+      "access-control-allow-origin": "*",
+    });
+    response.end(data);
+  });
+}
 
 server.on("upgrade", (request, socket) => {
   const key = request.headers["sec-websocket-key"];

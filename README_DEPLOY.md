@@ -1,5 +1,21 @@
 # Kotgun Tactical Game
 
+## Web Play
+
+Run the server with:
+
+```text
+npm start
+```
+
+Then open:
+
+```text
+http://localhost:8787
+```
+
+On Render, open the Render web service URL directly. The same URL now serves the game page and handles multiplayer WebSocket connections.
+
 ## Default Multiplayer Server
 
 The client now uses this server by default:

@@ -39,7 +39,8 @@ const spawns = {
   defense: new THREE.Vector3(0, bounds.surface.y, -43),
 };
 const prepZone = { minX: -13, maxX: 13, minZ: 35, maxZ: 50 };
-const DEFAULT_SERVER_URL = "wss://go-sh0t.onrender.com";
+const PUBLIC_SERVER_URL = "wss://go-sh0t.onrender.com";
+const DEFAULT_SERVER_URL = getDefaultServerUrl();
 
 const PREP_SECONDS = 20;
 const COMBAT_SECONDS = 100;
@@ -946,6 +947,12 @@ function getInitialServerUrl() {
   return DEFAULT_SERVER_URL;
 }
 
+function getDefaultServerUrl() {
+  if (location.protocol === "file:" || location.hostname.endsWith("github.io")) return PUBLIC_SERVER_URL;
+  if (location.hostname === "localhost" || location.hostname === "127.0.0.1") return `ws://${location.hostname}:8787`;
+  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
+}
+
 function normalizeServerUrl(rawUrl) {
   let url = rawUrl.trim();
   if (!url) return "";
@@ -1188,7 +1195,7 @@ function shoot(heavy = false) {
   sendNet("shot", { origin: vectorPayload(camera.position), direction: vectorPayload(baseDir), weapon: weapon.name });
   if (weapon.recoil) {
     const recoil = weapon.recoil * (player.scoped ? 0.72 : 1);
-    player.pitch = Math.max(-1.25, player.pitch - recoil);
+    player.pitch = Math.min(1.25, player.pitch + recoil);
     player.yaw += (Math.random() - 0.5) * recoil * 0.35;
   }
   if (!hitSomething && weapon.name === "산탄총") log("산탄이 엄폐물에 흩어졌습니다.");
