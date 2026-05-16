@@ -673,11 +673,14 @@ function registerHitbox(mesh, type, id, zone) {
 
 function createCharacterModel(type, id) {
   const group = new THREE.Group();
+  // type: "bot"=적, "remote"=멀티플레이어(팀에 따라 구분은 updateRemote에서)
   const tex = type === "bot" ? enemyTexture : characterTexture;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+  const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+  const sprite = new THREE.Sprite(spriteMat);
   sprite.position.y = 1.95;
   sprite.scale.set(2.35, 3.25, 1);
   group.add(sprite);
+  group.userData.sprite = sprite; // 나중에 색 바꾸기 위해 저장
 
   const body = new THREE.Mesh(new THREE.BoxGeometry(1.25, 1.5, 0.8), mats.invisible);
   body.position.y = 1.15;
@@ -792,6 +795,19 @@ function initUi() {
   });
   ui.buyLightArmor.addEventListener("click", () => buyArmor("작은갑옷", 125, 650));
   ui.buyHeavyArmor.addEventListener("click", () => buyArmor("큰갑옷", 150, 1000));
+
+  // 토글 버튼
+  function makeToggle(btnId, targetEl) {
+    const btn = document.querySelector(btnId);
+    if (!btn || !targetEl) return;
+    btn.addEventListener("click", () => {
+      const visible = targetEl.classList.toggle("visible");
+      btn.classList.toggle("active", visible);
+    });
+  }
+  makeToggle("#toggleWeapons", ui.weaponRow);
+  makeToggle("#toggleServer", document.querySelector(".server-panel"));
+  makeToggle("#toggleShop", document.querySelector(".shop-panel"));
   const savedServer = getInitialServerUrl();
   ui.serverUrl.value = savedServer;
   ui.teamMode.value = localStorage.getItem("kotgunTeamMode") || "versus";
@@ -1223,6 +1239,12 @@ function updateRemote(id, state, name = "Player") {
     remote.group.rotation.x = 0;
     remote.group.visible = true;
   }
+  // 팀원=초록, 적=빨강으로 스프라이트 색 구분
+  const sprite = remote.group.userData.sprite;
+  if (sprite) {
+    const isTeammate = remote.team === player.team;
+    sprite.material.color.set(isTeammate ? 0x88ff88 : 0xff6666);
+  }
   remote.group.position.set(state.x ?? 0, LEVEL_Y[remote.level] ?? 0, state.z ?? 0);
   remote.group.rotation.y = state.yaw ?? 0;
   remote.group.userData.marker.visible = remote.level !== player.level && remote.alive;
@@ -1468,6 +1490,7 @@ function respawnBot(bot) {
   bot.group.visible = true;
   bot.group.rotation.x = 0;
   bot.deathStartedAt = 0;
+  bot.defuseStart = 0;
   bot.group.position.copy(bot.base);
   bot.lastShot = 0;
 }
@@ -1672,6 +1695,13 @@ function plantBomb() {
 function updateBots(time) {
   bots.forEach((bot, index) => {
     if (!bot.alive) return;
+
+    // 폭탄이 설치됐으면 수비팀 봇은 폭탄으로 이동해서 해체 시도
+    if (match.bombPlanted && match.bombPosition && match.phase === "combat") {
+      botDefuse(bot, index, time);
+      return;
+    }
+
     const radius = 3.2 + index * 0.35;
     const next = bot.group.position.clone();
     next.x = bot.base.x + Math.sin(time * 0.45 + index) * radius;
@@ -1687,6 +1717,76 @@ function updateBots(time) {
     botShoot(bot, time);
   });
 }
+
+function botDefuse(bot, index, time) {
+  const bombPos = match.bombPosition;
+
+  // 폭탄은 지상(surface)에 있으므로 지하에 있으면 엘리베이터로 올라옴
+  if (bot.level === "underground") {
+    // 엘리베이터 중앙(0,0)으로 이동
+    const elevTarget = new THREE.Vector3(0, LEVEL_Y.underground, 0);
+    const toElev = elevTarget.clone().sub(bot.group.position);
+    toElev.y = 0;
+    const distToElev = toElev.length();
+    if (distToElev > 1.2) {
+      toElev.normalize().multiplyScalar(0.045);
+      const next = bot.group.position.clone().add(toElev);
+      next.y = LEVEL_Y.underground;
+      if (!entityCollidesAt("underground", next, 0.68, 2.55)) bot.group.position.copy(next);
+    } else {
+      // 엘리베이터 탑승: 지상으로
+      bot.level = "surface";
+      bot.group.position.set(0, LEVEL_Y.surface, 0);
+      log(`${bot.name} 엘리베이터로 지상 이동`);
+    }
+    bot.group.userData.marker.visible = bot.level !== player.level;
+    return;
+  }
+
+  // 지상에서 폭탄 위치로 이동
+  const toBomb = new THREE.Vector3(bombPos.x, LEVEL_Y.surface, bombPos.z).sub(bot.group.position);
+  toBomb.y = 0;
+  const dist = toBomb.length();
+
+  bot.group.lookAt(bombPos.x, bot.group.position.y + 1.4, bombPos.z);
+  bot.group.userData.marker.visible = false;
+
+  if (dist > 2.5) {
+    // 폭탄 쪽으로 이동
+    toBomb.normalize().multiplyScalar(0.055 + index * 0.005);
+    const next = bot.group.position.clone().add(toBomb);
+    next.y = LEVEL_Y.surface;
+    if (!entityCollidesAt("surface", next, 0.68, 2.55)) bot.group.position.copy(next);
+    botShoot(bot, time);
+  } else {
+    // 해체 범위 도달 - 해체 진행
+    if (!bot.defuseStart) {
+      bot.defuseStart = time;
+      log(`${bot.name} 폭탄 해체 시작!`);
+    }
+    const DEFUSE_TIME = 7; // 7초 해체
+    const elapsed = time - bot.defuseStart;
+    const progress = Math.min(1, elapsed / DEFUSE_TIME);
+
+    // HUD에 해체 진행도 표시
+    if (Math.floor(elapsed) !== Math.floor(elapsed - 0.05)) {
+      log(`폭탄 해체 중... ${Math.ceil((1 - progress) * DEFUSE_TIME)}초`);
+    }
+
+    if (progress >= 1) {
+      // 해체 완료
+      bot.defuseStart = 0;
+      if (match.bombMesh) {
+        scene.remove(match.bombMesh);
+        match.bombMesh = null;
+      }
+      match.bombPlanted = false;
+      log(`${bot.name} 폭탄 해체 완료! 수비팀 승리`);
+      finishRoundByTeam("defense", "폭탄 해제");
+    }
+  }
+}
+
 
 function botShoot(bot, time) {
   if (match.phase !== "combat" || !player.alive || player.team === "defense" || bot.level !== player.level) return;

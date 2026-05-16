@@ -295,12 +295,16 @@ body {
   position: absolute;
   left: 50%;
   bottom: 18px;
-  display: grid;
+  display: none;
   grid-template-columns: repeat(6, minmax(72px, 1fr));
   gap: 8px;
   width: min(700px, calc(100vw - 36px));
   transform: translateX(-50%);
   pointer-events: auto;
+}
+
+.weapon-row.visible {
+  display: grid;
 }
 
 .weapon-card {
@@ -380,6 +384,62 @@ body {
   width: min(390px, calc(100vw - 36px));
   padding: 12px;
   pointer-events: auto;
+  display: none;
+}
+
+.server-panel.visible {
+  display: block;
+}
+
+.shop-panel {
+  left: 18px;
+  top: 154px;
+  width: min(390px, calc(100vw - 36px));
+  padding: 12px;
+  pointer-events: auto;
+  display: none;
+}
+
+.shop-panel.visible {
+  display: block;
+}
+
+/* 우측 상단 토글 버튼 그룹 */
+.ui-toggle-group {
+  position: absolute;
+  top: 72px;
+  right: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: auto;
+  z-index: 10;
+}
+
+.ui-toggle-btn {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 8px;
+  background: rgba(18,15,16,0.78);
+  color: #ffbe70;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  white-space: nowrap;
+}
+
+.ui-toggle-btn.active {
+  background: rgba(255,190,112,0.22);
+  border-color: #ffbe70;
+}
+
+.server-row {
+  display: grid;
+  grid-template-columns: 1fr 72px;
+  gap: 8px;
 }
 
 .server-panel label {
@@ -390,16 +450,7 @@ body {
   font-weight: 800;
 }
 
-.server-row {
-  display: grid;
-  grid-template-columns: 1fr 72px;
-  gap: 8px;
-}
-
 .server-panel select {
-  width: 100%;
-  height: 36px;
-  margin-top: 8px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.08);
@@ -491,9 +542,64 @@ body {
     display: flex;
   }
 
+  /* 모바일: 무기패널, 상태패널, 킬피드, 상점, 서버, topbar 대부분 숨김 */
   .weapon-panel,
-  .status-panel {
+  .status-panel,
+  .killfeed,
+  .shop-panel,
+  .server-panel,
+  .ui-toggle-group,
+  .brand,
+  #roundBadge,
+  #scoreBadge,
+  #moneyBadge,
+  #levelBadge,
+  #siteBadge,
+  #intelBadge,
+  #netBadge {
+    display: none !important;
+  }
+
+  /* 타이머만 크게 좌상단 */
+  #timerBadge {
+    display: block !important;
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    font-size: 28px;
+    min-width: 64px;
+    padding: 8px 14px;
+  }
+
+  .topbar {
     display: none;
+  }
+
+  /* 모바일 컨트롤 위치: 화면 하단 꽉 채우게 */
+  .mobile-controls {
+    inset: auto 12px 24px 12px;
+  }
+
+  /* 버튼 크기 키우기 */
+  .mobile-actions button {
+    height: 72px;
+    font-size: 15px;
+  }
+
+  #mobileFire {
+    height: 90px;
+    width: 90px;
+    font-size: 16px;
+  }
+
+  .joystick {
+    width: 140px;
+    height: 140px;
+  }
+
+  .joystick-knob {
+    width: 60px;
+    height: 60px;
   }
 }
 
@@ -522,14 +628,6 @@ body {
     white-space: nowrap;
   }
 
-  .server-panel {
-    top: 154px;
-  }
-
-  .shop-panel {
-    top: 238px;
-  }
-
   .weapon-row {
     grid-template-columns: repeat(3, 1fr);
     bottom: 14px;
@@ -551,3 +649,4 @@ body {
     max-height: 76px;
   }
 }
+
