@@ -7,6 +7,10 @@ const PORT = Number(process.env.PORT) || 8787;
 const PUBLIC_DIR = __dirname;
 const clients = new Map();
 let nextId = 1;
+let teamMode = "versus";
+let bomb = null;
+const BOMB_SECONDS = 25;
+const BOMB_RADIUS = 18;
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -21,7 +25,8 @@ const mimeTypes = {
 };
 
 const spawns = [
-  { x: 0, z: 24, level: "surface" },
+  { x: 0, z: 43, level: "surface", team: "attack" },
+  { x: 0, z: -43, level: "surface", team: "defense" },
   { x: -46, z: -44, level: "surface" },
   { x: 46, z: 44, level: "surface" },
   { x: -32, z: -34, level: "underground" },
@@ -85,7 +90,8 @@ server.on("upgrade", (request, socket) => {
 
 function attachClient(socket) {
   const id = `p${nextId++}`;
-  const spawn = randomSpawn();
+  const team = assignTeam();
+  const spawn = randomSpawn(team);
   const client = {
     id,
     socket,
@@ -94,6 +100,7 @@ function attachClient(socket) {
     hp: 150,
     armor: "heavy",
     alive: true,
+    team,
     state: {
       x: spawn.x,
       z: spawn.z,
@@ -105,6 +112,7 @@ function attachClient(socket) {
       hp: 150,
       armor: "heavy",
       alive: true,
+      team,
     },
   };
   clients.set(id, client);
@@ -180,15 +188,23 @@ function processFrames(client) {
 
 function handleMessage(client, message) {
   if (message.type === "join") {
+    teamMode = message.teamMode === "same" ? "same" : "versus";
+    if (teamMode === "same") forceSameTeam();
+    client.team = teamMode === "same" ? "attack" : client.team;
+    const spawn = randomSpawn(client.team);
     client.name = String(message.name || client.id).slice(0, 24);
     client.armor = String(message.armor || "heavy").slice(0, 16);
     client.state = {
       ...client.state,
       ...sanitizeState(message.state),
+      x: spawn.x,
+      z: spawn.z,
+      level: spawn.level,
       hp: client.hp,
       alive: client.alive,
+      team: client.team,
     };
-    send(client, { type: "welcome", id: client.id, players: snapshot() });
+    send(client, { type: "welcome", id: client.id, team: client.team, teamMode, players: snapshot() });
     broadcast(
       {
         type: "player-joined",
@@ -197,6 +213,7 @@ function handleMessage(client, message) {
         hp: client.hp,
         armor: client.armor,
         alive: client.alive,
+        team: client.team,
         state: client.state,
       },
       client.id
@@ -210,6 +227,7 @@ function handleMessage(client, message) {
       ...sanitizeState(message.state),
       hp: client.hp,
       alive: client.alive,
+      team: client.team,
     };
     broadcast({ type: "state", id: client.id, name: client.name, state: client.state }, client.id);
     return;
@@ -227,6 +245,16 @@ function handleMessage(client, message) {
       },
       client.id
     );
+    return;
+  }
+
+  if (message.type === "bomb-plant") {
+    plantBomb(client, message);
+    return;
+  }
+
+  if (message.type === "bomb-exploded") {
+    explodeBomb();
     return;
   }
 
@@ -269,6 +297,7 @@ function snapshot() {
     hp: client.hp,
     armor: client.armor,
     alive: client.alive,
+    team: client.team,
     state: client.state,
   }));
 }
@@ -279,8 +308,26 @@ function removeClient(id) {
   broadcast({ type: "left", id });
 }
 
-function randomSpawn() {
-  return spawns[Math.floor(Math.random() * spawns.length)];
+function assignTeam() {
+  if (teamMode === "same") return "attack";
+  const counts = { attack: 0, defense: 0 };
+  clients.forEach((client) => {
+    counts[client.team] += 1;
+  });
+  return counts.attack <= counts.defense ? "attack" : "defense";
+}
+
+function forceSameTeam() {
+  clients.forEach((client) => {
+    client.team = "attack";
+    client.state.team = "attack";
+    broadcast({ type: "team-updated", id: client.id, team: "attack" });
+  });
+}
+
+function randomSpawn(team = "attack") {
+  const fixed = spawns.find((spawn) => spawn.team === team);
+  return fixed || spawns[Math.floor(Math.random() * spawns.length)];
 }
 
 function sanitizeState(state = {}) {
@@ -294,6 +341,7 @@ function sanitizeState(state = {}) {
     weapon: String(state.weapon || "weapon").slice(0, 20),
     scoped: Boolean(state.scoped),
     armor: String(state.armor || "heavy").slice(0, 16),
+    team: state.team === "defense" ? "defense" : "attack",
   };
 }
 
@@ -308,6 +356,7 @@ function sanitizeVector(vector = {}) {
 function applyHit(source, message) {
   const target = clients.get(message.targetId);
   if (!target || !target.alive || source.id === target.id) return;
+  if (source.team === target.team) return;
   const damage = clamp(Number(message.damage) || 0, 0, 320);
   target.hp = Math.max(0, target.hp - damage);
   target.alive = target.hp > 0;
@@ -332,7 +381,7 @@ function applyHit(source, message) {
 
 function respawn(client) {
   if (!clients.has(client.id)) return;
-  const spawn = randomSpawn();
+  const spawn = randomSpawn(client.team);
   client.hp = 150;
   client.alive = true;
   client.state = {
@@ -342,8 +391,54 @@ function respawn(client) {
     level: spawn.level,
     hp: 150,
     alive: true,
+    team: client.team,
   };
   broadcast({ type: "respawn", id: client.id, name: client.name, state: client.state });
+}
+
+function plantBomb(source, message) {
+  if (source.team !== "attack" || bomb) return;
+  const position = sanitizeVector(message.position);
+  bomb = {
+    site: String(message.site || "A").slice(0, 1),
+    position,
+    endAt: Date.now() + BOMB_SECONDS * 1000,
+  };
+  broadcast({
+    type: "bomb-planted",
+    site: bomb.site,
+    position: bomb.position,
+    timeLeft: BOMB_SECONDS,
+    sourceId: source.id,
+  });
+  setTimeout(explodeBomb, BOMB_SECONDS * 1000);
+}
+
+function explodeBomb() {
+  if (!bomb) return;
+  clients.forEach((client) => {
+    if (!client.alive || client.team !== "defense" || client.state.level !== "surface") return;
+    const distance = Math.hypot(client.state.x - bomb.position.x, client.state.z - bomb.position.z);
+    if (distance > BOMB_RADIUS) return;
+    client.hp = 0;
+    client.alive = false;
+    client.state.hp = 0;
+    client.state.alive = false;
+    broadcast({
+      type: "hit",
+      sourceId: "bomb",
+      sourceName: "Bomb",
+      targetId: client.id,
+      targetName: client.name,
+      damage: 999,
+      targetHp: 0,
+      zone: "bomb",
+      weapon: "폭탄",
+      dead: true,
+    });
+  });
+  broadcast({ type: "bomb-exploded", winningTeam: "attack" });
+  bomb = null;
 }
 
 function clamp(value, min, max) {

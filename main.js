@@ -22,8 +22,9 @@ try {
 }
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x2a1918);
-scene.fog = new THREE.Fog(0x2a1918, 70, 220);
+scene.background = new THREE.Color(0x6b5a4d);
+scene.fog = new THREE.Fog(0x6b5a4d, 90, 240);
+scene.add(new THREE.AmbientLight(0xffffff, 0.72));
 
 const camera = new THREE.PerspectiveCamera(74, 1, 0.1, 260);
 camera.rotation.order = "YXZ";
@@ -54,12 +55,14 @@ const spawns = {
   defense: new THREE.Vector3(0, bounds.surface.y, -43),
 };
 const prepZone = { minX: -13, maxX: 13, minZ: 35, maxZ: 50 };
-const PUBLIC_SERVER_URL = "wss://go-sh0t.onrender.com";
+const defensePrepZone = { minX: -14, maxX: 14, minZ: -50, maxZ: -36 };
+const PUBLIC_SERVER_URL = "hss://go-sh0t.onrender.com";
 const DEFAULT_SERVER_URL = getDefaultServerUrl();
 
 const PREP_SECONDS = 20;
 const COMBAT_SECONDS = 100;
-const BOMB_SECONDS = 35;
+const BOMB_SECONDS = 25;
+const BOMB_RADIUS = 18;
 const BASE_CAMERA_FOV = 74;
 const RIFLE_SCOPE_FOV = BASE_CAMERA_FOV / 1.7;
 const SNIPER_SCOPE_FOV = 16;
@@ -86,6 +89,7 @@ const ui = {
   log: document.querySelector("#log"),
   serverUrl: document.querySelector("#serverUrl"),
   connect: document.querySelector("#connectButton"),
+  teamMode: document.querySelector("#teamMode"),
   round: document.querySelector("#roundBadge"),
   score: document.querySelector("#scoreBadge"),
   money: document.querySelector("#moneyBadge"),
@@ -209,6 +213,9 @@ const player = {
   lastShot: 0,
   money: 800,
   killCount: 0,
+  deathStartedAt: 0,
+  deathYaw: 0,
+  spectatorTargetId: null,
   owned: new Set(["칼"]),
   team: "attack",
 };
@@ -224,6 +231,10 @@ const match = {
   bombPlanted: false,
   bombSite: null,
   bombEnd: 0,
+  bombPosition: null,
+  bombMesh: null,
+  lastBombBeep: 0,
+  bombBeepCount: 0,
   aiLosingStreak: 0,
 };
 
@@ -235,6 +246,7 @@ let audioContext;
 let socket;
 let networkStatus = "solo";
 let lastNetSend = 0;
+let localDeathModel = null;
 const heldWeaponRoot = new THREE.Group();
 const heldWeaponModels = new Map();
 const prepBarrierGroup = new THREE.Group();
@@ -686,6 +698,56 @@ function createCharacterModel(type, id) {
   return group;
 }
 
+function createDeathModel(team = "attack") {
+  const group = new THREE.Group();
+  const uniform = team === "attack" ? mats.yellow : mats.blue;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.45, 0.6), uniform);
+  body.position.y = 1.18;
+  group.add(body);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.72, 0.62), mats.hand);
+  head.position.y = 2.18;
+  group.add(head);
+  const pack = new THREE.Mesh(new THREE.BoxGeometry(1.05, 1.1, 0.28), mats.blackMetal);
+  pack.position.set(0, 1.15, 0.44);
+  group.add(pack);
+  const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.95, 0.42), mats.gunMetal);
+  leftLeg.position.set(-0.32, 0.42, 0);
+  group.add(leftLeg);
+  const rightLeg = leftLeg.clone();
+  rightLeg.position.x = 0.32;
+  group.add(rightLeg);
+  return group;
+}
+
+function beginLocalDeath() {
+  if (player.deathStartedAt) return;
+  player.deathStartedAt = performance.now() / 1000;
+  player.deathYaw = player.yaw;
+  player.scoped = false;
+  endFire();
+  if (localDeathModel) scene.remove(localDeathModel);
+  localDeathModel = createDeathModel(player.team);
+  localDeathModel.position.set(player.position.x, LEVEL_Y[player.level], player.position.z);
+  localDeathModel.rotation.y = player.yaw;
+  scene.add(localDeathModel);
+}
+
+function beginRemoteDeath(remote, yaw = remote.group.rotation.y) {
+  if (!remote || remote.deathStartedAt) return;
+  remote.deathStartedAt = performance.now() / 1000;
+  remote.deathYaw = yaw;
+  remote.group.visible = true;
+  remote.group.rotation.x = 0;
+}
+
+function beginBotDeath(bot) {
+  if (!bot || bot.deathStartedAt) return;
+  bot.deathStartedAt = performance.now() / 1000;
+  bot.deathYaw = bot.group.rotation.y;
+  bot.group.visible = true;
+  bot.group.rotation.x = 0;
+}
+
 function addBot(id, name, x, level, z, armor) {
   const hpLimit = armor === "큰갑옷" ? 150 : armor === "작은갑옷" ? 125 : 100;
   const bot = {
@@ -720,6 +782,8 @@ function initUi() {
   ui.buyHeavyArmor.addEventListener("click", () => buyArmor("큰갑옷", 150, 1000));
   const savedServer = getInitialServerUrl();
   ui.serverUrl.value = savedServer;
+  ui.teamMode.value = localStorage.getItem("kotgunTeamMode") || "versus";
+  ui.teamMode.addEventListener("change", () => localStorage.setItem("kotgunTeamMode", ui.teamMode.value));
   ui.connect.addEventListener("click", () => connectMultiplayer(ui.serverUrl.value));
   selectWeapon(0, true);
   setNetStatus("solo", "혼자 연습");
@@ -874,15 +938,28 @@ function startPrep() {
   match.bombPlanted = false;
   match.bombSite = null;
   match.bombEnd = 0;
+  match.bombPosition = null;
+  match.lastBombBeep = 0;
+  match.bombBeepCount = 0;
+  if (match.bombMesh) {
+    scene.remove(match.bombMesh);
+    match.bombMesh = null;
+  }
   prepBarrierGroup.visible = true;
   player.alive = true;
   player.hp = player.armorLimit;
   player.level = "surface";
-  player.position.copy(spawns.attack);
+  player.position.copy(spawns[player.team] ?? spawns.attack);
   player.velocityY = 0;
   player.jumpOffset = 0;
   player.grounded = true;
   player.scoped = false;
+  player.deathStartedAt = 0;
+  player.spectatorTargetId = null;
+  if (localDeathModel) {
+    scene.remove(localDeathModel);
+    localDeathModel = null;
+  }
   camera.position.copy(player.position);
   bots.forEach(respawnBot);
   buyAiLoadouts();
@@ -924,6 +1001,10 @@ function finishRound(playerWon, reason) {
   }
 }
 
+function finishRoundByTeam(winningTeam, reason) {
+  finishRound(player.team === winningTeam, reason);
+}
+
 function isMatchOver() {
   if (match.playerScore === 12 && match.enemyScore === 12) return false;
   if (match.playerScore >= 13 || match.enemyScore >= 13) {
@@ -937,8 +1018,7 @@ function advanceRoundIfNeeded(time) {
   if (match.ended) return;
   if (match.phase === "prep" && time >= match.phaseEnd) startCombat();
   if (match.phase === "combat") {
-    if (match.bombPlanted && time >= match.bombEnd) finishRound(true, `${match.bombSite} 폭탄 폭발`);
-    if (!player.alive) finishRound(false, "플레이어 전멸");
+    if (!player.alive && (!getAliveTeammate() || networkStatus !== "online")) finishRound(false, "플레이어 전멸");
     else if (bots.every((bot) => !bot.alive)) finishRound(true, "적 전멸");
     else if (time >= match.phaseEnd) finishRound(false, "시간 종료");
   }
@@ -971,9 +1051,7 @@ function getInitialServerUrl() {
 }
 
 function getDefaultServerUrl() {
-  if (location.protocol === "file:" || location.hostname.endsWith("github.io")) return PUBLIC_SERVER_URL;
-  if (location.hostname === "localhost" || location.hostname === "127.0.0.1") return `ws://${location.hostname}:8787`;
-  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
+  return PUBLIC_SERVER_URL;
 }
 
 function normalizeServerUrl(rawUrl) {
@@ -1000,7 +1078,7 @@ function connectMultiplayer(rawUrl) {
   ws.addEventListener("open", () => {
     if (socket !== ws) return;
     setNetStatus("online", "멀티 연결");
-    sendNet("join", { name: player.name, armor: player.armor, state: makeNetworkState() });
+    sendNet("join", { name: player.name, armor: player.armor, teamMode: ui.teamMode.value, state: makeNetworkState() });
     log("멀티플레이 서버 연결 성공.");
   });
   ws.addEventListener("message", (event) => {
@@ -1041,12 +1119,18 @@ function makeNetworkState() {
     hp: player.hp,
     armor: player.armor,
     alive: player.alive,
+    team: player.team,
   };
 }
 
 function handleNetMessage(message) {
   if (message.type === "welcome") {
     player.id = message.id;
+    if (message.team) {
+      player.team = message.team;
+      player.position.copy(spawns[player.team] ?? spawns.attack);
+      log(`팀 배정: ${player.team === "attack" ? "공격팀" : "수비팀"}`);
+    }
     message.players.forEach((entry) => {
       if (entry.id !== player.id) ensureRemote(entry.id, entry);
     });
@@ -1059,12 +1143,25 @@ function handleNetMessage(message) {
   if (message.type === "left") removeRemote(message.id);
   if (message.type === "shot" && message.id !== player.id) drawTracer(message.origin, message.direction, 0xff7668);
   if (message.type === "hit") handleServerHit(message);
+  if (message.type === "team-updated") {
+    if (message.id === player.id) player.team = message.team;
+    else if (remotePlayers.has(message.id)) remotePlayers.get(message.id).team = message.team;
+  }
+  if (message.type === "bomb-planted") setBombPlanted(message.site, payloadVector(message.position), message.timeLeft ?? BOMB_SECONDS, false);
+  if (message.type === "bomb-exploded") {
+    explodeBomb(false);
+  }
   if (message.type === "respawn") {
     if (message.id === player.id) {
       player.hp = player.armorLimit;
       player.alive = true;
+      player.deathStartedAt = 0;
       player.level = message.state.level;
       player.position.set(message.state.x, bounds[player.level].y, message.state.z);
+      if (localDeathModel) {
+        scene.remove(localDeathModel);
+        localDeathModel = null;
+      }
       log("리스폰 완료.");
     } else {
       updateRemote(message.id, message.state, message.name);
@@ -1080,6 +1177,9 @@ function ensureRemote(id, data) {
     level: data.state?.level ?? "surface",
     hp: data.hp ?? data.state?.hp ?? 150,
     alive: data.alive ?? data.state?.alive ?? true,
+    team: data.team ?? data.state?.team ?? "defense",
+    deathStartedAt: 0,
+    deathYaw: 0,
     group: createCharacterModel("remote", id),
   };
   scene.add(remote.group);
@@ -1094,8 +1194,13 @@ function updateRemote(id, state, name = "Player") {
   remote.name = name;
   remote.level = state.level ?? remote.level;
   remote.hp = state.hp ?? remote.hp;
+  remote.team = state.team ?? remote.team;
   remote.alive = state.alive ?? remote.alive;
-  remote.group.visible = remote.alive;
+  if (remote.alive) {
+    remote.deathStartedAt = 0;
+    remote.group.rotation.x = 0;
+    remote.group.visible = true;
+  }
   remote.group.position.set(state.x ?? 0, LEVEL_Y[remote.level] ?? 0, state.z ?? 0);
   remote.group.rotation.y = state.yaw ?? 0;
   remote.group.userData.marker.visible = remote.level !== player.level && remote.alive;
@@ -1116,13 +1221,15 @@ function handleServerHit(message) {
   if (message.targetId === player.id) {
     player.hp = Math.max(0, message.targetHp);
     player.alive = !message.dead;
+    if (message.dead) beginLocalDeath();
     log(message.dead ? `${message.weapon}에 당했습니다.` : `${message.weapon} 피격 · 체력 ${player.hp}`);
   }
   const remote = remotePlayers.get(message.targetId);
   if (remote) {
     remote.hp = Math.max(0, message.targetHp);
     remote.alive = !message.dead;
-    remote.group.visible = remote.alive;
+    if (message.dead) beginRemoteDeath(remote);
+    else remote.group.visible = true;
   }
   if (message.sourceId === player.id && message.dead) {
     addMoney(KILL_MONEY);
@@ -1314,7 +1421,7 @@ function applyDamageTarget(target, damage, weaponName, distance, backstab = fals
     playSound("hit");
     if (bot.hp <= 0) {
       bot.alive = false;
-      bot.group.visible = false;
+      beginBotDeath(bot);
       addMoney(KILL_MONEY);
       registerPlayerKill();
       log(`${weaponName} ${zoneName} ${Math.round(damage)} 피해: ${bot.name} 처치 +$${KILL_MONEY}`);
@@ -1323,6 +1430,11 @@ function applyDamageTarget(target, damage, weaponName, distance, backstab = fals
     }
   }
   if (target.type === "remote") {
+    const remote = remotePlayers.get(target.id);
+    if (remote?.team === player.team) {
+      log("같은 팀은 공격할 수 없습니다.");
+      return;
+    }
     sendNet("hit", { targetId: target.id, damage, zone: target.zone, weapon: weaponName, distance });
     playSound("hit");
   }
@@ -1332,6 +1444,8 @@ function respawnBot(bot) {
   bot.hp = bot.hpLimit;
   bot.alive = true;
   bot.group.visible = true;
+  bot.group.rotation.x = 0;
+  bot.deathStartedAt = 0;
   bot.group.position.copy(bot.base);
   bot.lastShot = 0;
 }
@@ -1378,7 +1492,49 @@ function playerCollidesAt(position) {
   return entityCollidesAt(player.level, position);
 }
 
+function animateFallenGroup(group, startedAt, yaw, now) {
+  const t = THREE.MathUtils.clamp((now - startedAt) / 0.85, 0, 1);
+  const eased = 1 - Math.pow(1 - t, 3);
+  group.rotation.y = yaw;
+  group.rotation.x = -Math.PI * 0.5 * eased;
+  group.position.z += Math.cos(yaw) * 0.004 * (1 - t);
+  group.position.x += Math.sin(yaw) * 0.004 * (1 - t);
+}
+
+function getAliveTeammate() {
+  return [...remotePlayers.values()].find((remote) => remote.alive && remote.team === player.team && remote.level === player.level);
+}
+
+function updateSpectatorCamera(now) {
+  if (!player.deathStartedAt) return;
+  const teammate = now - player.deathStartedAt > 1.4 ? getAliveTeammate() : null;
+  if (teammate) {
+    const yaw = teammate.group.rotation.y;
+    const behind = new THREE.Vector3(Math.sin(yaw) * 6, 3.2, Math.cos(yaw) * 6);
+    camera.position.lerp(teammate.group.position.clone().add(behind), 0.09);
+    camera.lookAt(teammate.group.position.x, teammate.group.position.y + 1.6, teammate.group.position.z);
+    return;
+  }
+  if (localDeathModel) {
+    const back = new THREE.Vector3(Math.sin(player.deathYaw) * 6, 3.1, Math.cos(player.deathYaw) * 6);
+    camera.position.lerp(localDeathModel.position.clone().add(back), 0.12);
+    camera.lookAt(localDeathModel.position.x, localDeathModel.position.y + 1.0, localDeathModel.position.z);
+  }
+}
+
+function updateDeathAnimations(now) {
+  if (localDeathModel && player.deathStartedAt) animateFallenGroup(localDeathModel, player.deathStartedAt, player.deathYaw, now);
+  remotePlayers.forEach((remote) => {
+    if (remote.deathStartedAt) animateFallenGroup(remote.group, remote.deathStartedAt, remote.deathYaw, now);
+  });
+  bots.forEach((bot) => {
+    if (bot.deathStartedAt) animateFallenGroup(bot.group, bot.deathStartedAt, bot.deathYaw, now);
+  });
+  if (!player.alive) updateSpectatorCamera(now);
+}
+
 function movePlayer(dt) {
+  if (!player.alive) return;
   const weapon = weapons[weaponIndex];
   const speed = 9.4 * weapon.move * (player.scoped ? 0.54 : 1);
   const forward = new THREE.Vector3(Math.sin(player.yaw), 0, Math.cos(player.yaw));
@@ -1405,8 +1561,9 @@ function movePlayer(dt) {
   if (!playerCollidesAt(nextZ)) player.position.z = nextZ.z;
 
   if (match.phase === "prep" && player.level === "surface") {
-    player.position.x = THREE.MathUtils.clamp(player.position.x, prepZone.minX, prepZone.maxX);
-    player.position.z = THREE.MathUtils.clamp(player.position.z, prepZone.minZ, prepZone.maxZ);
+    const zone = player.team === "defense" ? defensePrepZone : prepZone;
+    player.position.x = THREE.MathUtils.clamp(player.position.x, zone.minX, zone.maxX);
+    player.position.z = THREE.MathUtils.clamp(player.position.z, zone.minZ, zone.maxZ);
   }
 
   if (!player.grounded) {
@@ -1465,10 +1622,9 @@ function plantBomb() {
     log("폭탄은 지상 A 또는 지상 B 안에서만 설치할 수 있습니다.");
     return;
   }
-  match.bombPlanted = true;
-  match.bombSite = site;
-  match.bombEnd = performance.now() / 1000 + BOMB_SECONDS;
-  log(`${site} 사이트에 폭탄 설치. ${BOMB_SECONDS}초 뒤 폭발합니다.`);
+  const position = player.position.clone();
+  if (networkStatus === "online") sendNet("bomb-plant", { site, position: vectorPayload(position) });
+  setBombPlanted(site, position, BOMB_SECONDS, true);
 }
 
 function updateBots(time) {
@@ -1491,7 +1647,7 @@ function updateBots(time) {
 }
 
 function botShoot(bot, time) {
-  if (match.phase !== "combat" || !player.alive || bot.level !== player.level) return;
+  if (match.phase !== "combat" || !player.alive || player.team === "defense" || bot.level !== player.level) return;
   const weapon = weapons[bot.weaponIndex] ?? weapons[1];
   const distance = bot.group.position.distanceTo(player.position);
   const maxRange = weapon.name === "저격" ? 76 : weapon.name === "기관총" || weapon.name === "소총" ? 54 : 38;
@@ -1507,7 +1663,10 @@ function botShoot(bot, time) {
     const damage = weapon.name === "저격" ? 45 : weapon.name === "소총" ? 18 : weapon.name === "기관총" ? 14 : weapon.name === "산탄총" ? 22 : 12;
     player.hp = Math.max(0, player.hp - damage);
     player.alive = player.hp > 0;
-    if (!player.alive) bot.money = Math.min(MONEY_CAP, bot.money + KILL_MONEY);
+    if (!player.alive) {
+      bot.money = Math.min(MONEY_CAP, bot.money + KILL_MONEY);
+      beginLocalDeath();
+    }
     log(`${bot.name} ${weapon.name} 피격 · 체력 ${player.hp}`);
   }
   const dir = player.position.clone().sub(bot.group.position).normalize();
@@ -1555,6 +1714,90 @@ function getSite() {
   return "중앙";
 }
 
+function createBombMesh(position) {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.34, 0.7), mats.blackMetal);
+  body.position.y = 0.22;
+  group.add(body);
+  const light = new THREE.PointLight(0xff342d, 1.8, 12);
+  light.position.y = 0.9;
+  group.add(light);
+  group.userData.light = light;
+  group.position.copy(position);
+  group.position.y = LEVEL_Y.surface + 0.08;
+  scene.add(group);
+  return group;
+}
+
+function setBombPlanted(site, position, timeLeft = BOMB_SECONDS, announce = true) {
+  match.bombPlanted = true;
+  match.bombSite = site;
+  match.bombEnd = performance.now() / 1000 + timeLeft;
+  match.bombPosition = position.clone();
+  match.lastBombBeep = 0;
+  match.bombBeepCount = 0;
+  if (match.bombMesh) scene.remove(match.bombMesh);
+  match.bombMesh = createBombMesh(match.bombPosition);
+  if (announce) log(`${site} 사이트에 폭탄 설치. ${BOMB_SECONDS}초 뒤 폭발합니다.`);
+}
+
+function playBombBeep(timeLeft) {
+  const pitch = THREE.MathUtils.lerp(1150, 620, timeLeft / BOMB_SECONDS);
+  playTone(pitch, audioContext?.currentTime ?? 0, 0.07);
+}
+
+function updateBomb(time) {
+  if (!match.bombPlanted) return;
+  const timeLeft = Math.max(0, match.bombEnd - time);
+  const interval = THREE.MathUtils.lerp(0.12, 0.85, timeLeft / BOMB_SECONDS);
+  if (time - match.lastBombBeep >= interval) {
+    match.lastBombBeep = time;
+    match.bombBeepCount += 1;
+    playBombBeep(timeLeft);
+    if (match.bombMesh?.userData.light) match.bombMesh.userData.light.intensity = 1.2 + Math.sin(match.bombBeepCount) * 0.7;
+  }
+  if (timeLeft <= 0) explodeBomb(true);
+}
+
+function damageExplosionTargets() {
+  if (!match.bombPosition) return;
+  if (player.team === "defense" && player.alive && player.level === "surface") {
+    const distance = Math.hypot(player.position.x - match.bombPosition.x, player.position.z - match.bombPosition.z);
+    if (distance <= BOMB_RADIUS) {
+      player.hp = 0;
+      player.alive = false;
+      beginLocalDeath();
+      log("폭탄 폭발 범위 안에서 사망했습니다.");
+    }
+  }
+  bots.forEach((bot) => {
+    if (!bot.alive || bot.level !== "surface") return;
+    const distance = Math.hypot(bot.group.position.x - match.bombPosition.x, bot.group.position.z - match.bombPosition.z);
+    if (distance <= BOMB_RADIUS) {
+      bot.hp = 0;
+      bot.alive = false;
+      beginBotDeath(bot);
+    }
+  });
+}
+
+function explodeBomb(localAuthority = true) {
+  if (!match.bombPlanted) return;
+  damageExplosionTargets();
+  if (match.bombMesh) {
+    match.bombMesh.userData.light.intensity = 8;
+    setTimeout(() => {
+      if (match.bombMesh) {
+        scene.remove(match.bombMesh);
+        match.bombMesh = null;
+      }
+    }, 700);
+  }
+  match.bombPlanted = false;
+  if (localAuthority && networkStatus === "online") sendNet("bomb-exploded", {});
+  finishRoundByTeam("attack", "폭탄 폭발");
+}
+
 function sendStateIfNeeded(time) {
   if (networkStatus !== "online") return;
   if (time - lastNetSend < 1 / 14) return;
@@ -1571,6 +1814,8 @@ function animate() {
   movePlayer(dt);
   updateBots(elapsed);
   updateRemoteMarkers();
+  updateDeathAnimations(now);
+  updateBomb(now);
   updateHeldWeaponMotion(elapsed);
   updateScopeView();
   updateHud(now);

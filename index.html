@@ -82,10 +82,26 @@
             <input id="serverUrl" type="text" placeholder="wss://your-render-server.onrender.com" />
             <button id="connectButton" type="button">연결</button>
           </div>
+          <select id="teamMode">
+            <option value="versus">공격/수비로 나눠서 게임</option>
+            <option value="same">같은 팀으로 게임</option>
+          </select>
         </div>
       </div>
     </div>
 
+    <script>
+      if (location.protocol === "file:") {
+        window.addEventListener("DOMContentLoaded", () => {
+          const notice = document.querySelector("#bootNotice");
+          if (notice) {
+            notice.classList.add("error");
+            notice.querySelector("strong").textContent = "웹 주소로 실행해야 합니다";
+            notice.querySelector("span").textContent = "start-game.bat 파일을 더블클릭하면 서버가 켜지고 게임 주소가 자동으로 열립니다.";
+          }
+        });
+      }
+    </script>
     <script type="module" src="./main.js"></script>
   </body>
 </html>
