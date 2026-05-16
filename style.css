@@ -18,6 +18,7 @@ body {
   width: 100vw;
   height: 100vh;
   display: block;
+  touch-action: none;
 }
 
 #hud {
@@ -32,12 +33,19 @@ body {
   left: 50%;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
   transform: translateX(-50%);
   font-weight: 800;
+  width: min(980px, calc(100vw - 24px));
 }
 
 .brand,
+#roundBadge,
+#scoreBadge,
+#moneyBadge,
+#timerBadge,
 #levelBadge,
 #siteBadge,
 #intelBadge,
@@ -59,6 +67,12 @@ body {
 
 #intelBadge.revealed,
 #netBadge.online {
+  color: #211616;
+  background: #ffbe70;
+}
+
+#moneyBadge,
+#timerBadge {
   color: #211616;
   background: #ffbe70;
 }
@@ -97,6 +111,50 @@ body {
   left: 12px;
   width: 2px;
   height: 26px;
+}
+
+#scopeOverlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at center, transparent 0 30vmin, rgba(0, 0, 0, 0.94) 30.4vmin),
+    radial-gradient(circle at center, rgba(255, 245, 226, 0.05), transparent 31vmin);
+}
+
+#scopeOverlay.active {
+  display: block;
+}
+
+.scope-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(60vmin, 640px);
+  height: min(60vmin, 640px);
+  border: 2px solid rgba(245, 238, 220, 0.9);
+  border-radius: 50%;
+  box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.9), 0 0 18px rgba(255, 255, 255, 0.08);
+  transform: translate(-50%, -50%);
+}
+
+.scope-line {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  background: rgba(245, 238, 220, 0.86);
+  transform: translate(-50%, -50%);
+}
+
+.scope-line-x {
+  width: min(60vmin, 640px);
+  height: 1px;
+}
+
+.scope-line-y {
+  width: 1px;
+  height: min(60vmin, 640px);
 }
 
 .panel {
@@ -139,6 +197,46 @@ body {
   text-align: center;
 }
 
+.shop-panel {
+  left: 18px;
+  top: 154px;
+  width: min(390px, calc(100vw - 36px));
+  padding: 12px;
+  pointer-events: auto;
+}
+
+.panel-title {
+  color: #ffbe70;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+#shopHint {
+  margin-top: 6px;
+  color: #ded2c2;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.armor-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.armor-row button {
+  min-width: 0;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: #ffbe70;
+  color: #211616;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+}
+
 .status-panel div {
   color: #cabeb1;
   font-size: 12px;
@@ -170,6 +268,7 @@ body {
   gap: 8px;
   width: min(700px, calc(100vw - 36px));
   transform: translateX(-50%);
+  pointer-events: auto;
 }
 
 .weapon-card {
@@ -179,11 +278,25 @@ body {
   border-radius: 8px;
   background: rgba(18, 15, 16, 0.68);
   text-align: center;
+  cursor: pointer;
+  font: inherit;
 }
 
 .weapon-card.active {
   border-color: #ffbe70;
   background: rgba(255, 190, 112, 0.22);
+}
+
+.weapon-card.owned {
+  border-color: rgba(255, 190, 112, 0.45);
+}
+
+.weapon-card.locked {
+  opacity: 0.76;
+}
+
+.weapon-card:disabled {
+  cursor: not-allowed;
 }
 
 .weapon-card b {
@@ -274,6 +387,72 @@ body {
   font-weight: 900;
 }
 
+.mobile-controls {
+  position: absolute;
+  inset: auto 18px 92px 18px;
+  display: none;
+  align-items: flex-end;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.joystick {
+  position: relative;
+  width: 126px;
+  height: 126px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  background: rgba(18, 15, 16, 0.52);
+  pointer-events: auto;
+  touch-action: none;
+  backdrop-filter: blur(8px);
+}
+
+.joystick-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: #ffbe70;
+  transform: translate(-50%, -50%);
+}
+
+.mobile-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 76px);
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.mobile-actions button {
+  height: 58px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  background: rgba(255, 190, 112, 0.92);
+  color: #211616;
+  font: inherit;
+  font-weight: 900;
+  touch-action: none;
+}
+
+#mobileFire {
+  height: 76px;
+  grid-row: span 2;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .mobile-controls {
+    display: flex;
+  }
+
+  .weapon-panel,
+  .status-panel {
+    display: none;
+  }
+}
+
 @media (max-width: 760px) {
   .topbar {
     left: 12px;
@@ -285,6 +464,10 @@ body {
   }
 
   .brand,
+  #roundBadge,
+  #scoreBadge,
+  #moneyBadge,
+  #timerBadge,
   #levelBadge,
   #siteBadge,
   #intelBadge,
@@ -296,7 +479,11 @@ body {
   }
 
   .server-panel {
-    top: 116px;
+    top: 154px;
+  }
+
+  .shop-panel {
+    top: 238px;
   }
 
   .weapon-row {
@@ -316,7 +503,7 @@ body {
   }
 
   .killfeed {
-    top: 196px;
+    top: 320px;
     max-height: 76px;
   }
 }

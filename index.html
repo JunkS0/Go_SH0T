@@ -13,16 +13,25 @@
       <div id="hud">
         <div class="topbar">
           <div class="brand">고총 전술전</div>
+          <div id="roundBadge">준비 1R</div>
+          <div id="scoreBadge">0 : 0</div>
+          <div id="moneyBadge">$800</div>
+          <div id="timerBadge">20</div>
           <div id="levelBadge">지상</div>
           <div id="siteBadge">중앙</div>
-          <div id="intelBadge">타층 적 표시</div>
+          <div id="intelBadge">대치 중</div>
           <div id="netBadge">혼자 연습</div>
         </div>
 
         <div class="crosshair" aria-hidden="true"></div>
+        <div id="scopeOverlay" aria-hidden="true">
+          <div class="scope-ring"></div>
+          <div class="scope-line scope-line-x"></div>
+          <div class="scope-line scope-line-y"></div>
+        </div>
 
         <div class="panel weapon-panel">
-          <div id="weaponName">고총 · 권총</div>
+          <div id="weaponName">칼 · 근접</div>
           <div id="weaponStats"></div>
           <div id="ammoLine"></div>
         </div>
@@ -33,19 +42,40 @@
           <div>속도 <strong id="speed">보통</strong></div>
         </div>
 
+        <div class="panel shop-panel">
+          <div class="panel-title">상점</div>
+          <div id="shopHint">준비 시간에만 총과 갑옷을 살 수 있습니다.</div>
+          <div class="armor-row">
+            <button id="buyLightArmor" type="button">작은갑옷 $650</button>
+            <button id="buyHeavyArmor" type="button">큰갑옷 $1000</button>
+          </div>
+        </div>
+
         <div class="panel killfeed" id="log"></div>
 
         <div class="weapon-row" id="weaponRow"></div>
 
+        <div class="mobile-controls" id="mobileControls" aria-hidden="true">
+          <div class="joystick" id="joystickBase">
+            <div class="joystick-knob" id="joystickKnob"></div>
+          </div>
+          <div class="mobile-actions">
+            <button id="mobileAim" type="button">조준</button>
+            <button id="mobileFire" type="button">발사</button>
+            <button id="mobileJump" type="button">점프</button>
+            <button id="mobilePlant" type="button">설치</button>
+          </div>
+        </div>
+
         <button id="startButton" type="button">
           <span>클릭해서 시작</span>
-          <small>WASD 이동 · 마우스 조준 · 좌클릭 사격 · 우클릭 조준/강공격 · E 엘리베이터 · 1-6 무기</small>
+          <small>WASD 이동 · Space 점프 · 마우스 조준 · 좌클릭 공격 · 우클릭 조준/강공격 · F 폭탄 설치 · E 엘리베이터 · 휠 버튼 UI · 1-6 무기 선택/구매</small>
         </button>
 
         <div class="panel server-panel">
           <label for="serverUrl">멀티 서버</label>
           <div class="server-row">
-            <input id="serverUrl" type="text" placeholder="wss://내-render-서버.onrender.com" />
+            <input id="serverUrl" type="text" placeholder="wss://your-render-server.onrender.com" />
             <button id="connectButton" type="button">연결</button>
           </div>
         </div>
