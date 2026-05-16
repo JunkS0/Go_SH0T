@@ -32,6 +32,8 @@ camera.rotation.order = "YXZ";
 const textureLoader = new THREE.TextureLoader();
 const characterTexture = textureLoader.load("./assets/character.png");
 characterTexture.colorSpace = THREE.SRGBColorSpace;
+const enemyTexture = textureLoader.load("./assets/enemy.png");
+enemyTexture.colorSpace = THREE.SRGBColorSpace;
 
 const clock = new THREE.Clock();
 const raycaster = new THREE.Raycaster();
@@ -671,7 +673,8 @@ function registerHitbox(mesh, type, id, zone) {
 
 function createCharacterModel(type, id) {
   const group = new THREE.Group();
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: characterTexture, transparent: true }));
+  const tex = type === "bot" ? enemyTexture : characterTexture;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
   sprite.position.y = 1.95;
   sprite.scale.set(2.35, 3.25, 1);
   group.add(sprite);
@@ -763,6 +766,14 @@ function addBot(id, name, x, level, z, armor) {
   bot.group.position.copy(bot.base);
   scene.add(bot.group);
   bots.push(bot);
+}
+
+function placeBombAtSpawn() {
+  // 폭탄을 공격팀 스폰 지점(z=43)에 시각적으로 배치 (실제 폭탄 설치는 아님)
+  const spawnPos = spawns.attack.clone();
+  spawnPos.x += 1.5; // 살짝 옆에
+  if (match.bombMesh) scene.remove(match.bombMesh);
+  match.bombMesh = createBombMesh(spawnPos);
 }
 
 function setupBots() {
@@ -946,6 +957,8 @@ function startPrep() {
     scene.remove(match.bombMesh);
     match.bombMesh = null;
   }
+  // 폭탄을 공격팀 시작 지점에 배치
+  placeBombAtSpawn();
   prepBarrierGroup.visible = true;
   player.alive = true;
   player.hp = player.armorLimit;
@@ -973,6 +986,11 @@ function startCombat() {
   match.phaseEnd = performance.now() / 1000 + COMBAT_SECONDS;
   match.combatStarted = performance.now() / 1000;
   prepBarrierGroup.visible = false;
+  // 준비 단계 폭탄 시각 오브젝트 제거 (아직 설치 안 됨)
+  if (match.bombMesh && !match.bombPlanted) {
+    scene.remove(match.bombMesh);
+    match.bombMesh = null;
+  }
   refreshWeaponCards();
   log(`${match.round}라운드 전투 시작.`);
 }
