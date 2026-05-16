@@ -404,16 +404,16 @@ body {
   display: block;
 }
 
-/* 우측 상단 토글 버튼 그룹 */
+/* 우측 상단 토글 버튼 그룹 - 항상 위에 */
 .ui-toggle-group {
-  position: absolute;
+  position: fixed;
   top: 72px;
   right: 18px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   pointer-events: auto;
-  z-index: 10;
+  z-index: 999;
 }
 
 .ui-toggle-btn {
@@ -557,12 +557,13 @@ body {
     display: none !important;
   }
 
-  /* 토글 버튼 - 모바일에서도 보이게, 우측 중간에 세로 배치 */
+  /* 토글 버튼 - 모바일에서 우측 중간 고정 */
   .ui-toggle-group {
+    position: fixed;
     top: 50%;
     right: 12px;
     transform: translateY(-50%);
-    z-index: 20;
+    z-index: 999;
   }
 
   .ui-toggle-btn {

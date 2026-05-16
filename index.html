@@ -66,13 +66,6 @@
 
         <div class="weapon-row" id="weaponRow"></div>
 
-        <!-- PC/모바일 공용 토글 버튼 -->
-        <div class="ui-toggle-group">
-          <button class="ui-toggle-btn" id="toggleWeapons" type="button">🔫 무기</button>
-          <button class="ui-toggle-btn" id="toggleServer" type="button">🌐 서버</button>
-          <button class="ui-toggle-btn" id="toggleShop" type="button">🛒 상점</button>
-        </div>
-
         <div class="mobile-controls" id="mobileControls" aria-hidden="true">
           <div class="joystick" id="joystickBase">
             <div class="joystick-knob" id="joystickKnob"></div>
@@ -102,6 +95,13 @@
           </select>
         </div>
       </div>
+    </div>
+
+    <!-- 토글 버튼: #hud 바깥, 항상 위에 표시 -->
+    <div class="ui-toggle-group">
+      <button class="ui-toggle-btn" id="toggleWeapons" type="button">🔫 무기</button>
+      <button class="ui-toggle-btn" id="toggleServer" type="button">🌐 서버</button>
+      <button class="ui-toggle-btn" id="toggleShop" type="button">🛒 상점</button>
     </div>
 
     <script>
