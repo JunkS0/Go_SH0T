@@ -542,13 +542,10 @@ body {
     display: flex;
   }
 
-  /* 모바일: 무기패널, 상태패널, 킬피드, 상점, 서버, topbar 대부분 숨김 */
+  /* 모바일: 무기패널, 상태패널, 킬피드, 상점, 서버 숨김 (토글로 열 수 있음) */
   .weapon-panel,
   .status-panel,
   .killfeed,
-  .shop-panel,
-  .server-panel,
-  .ui-toggle-group,
   .brand,
   #roundBadge,
   #scoreBadge,
@@ -558,6 +555,20 @@ body {
   #intelBadge,
   #netBadge {
     display: none !important;
+  }
+
+  /* 토글 버튼 - 모바일에서도 보이게, 우측 중간에 세로 배치 */
+  .ui-toggle-group {
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    z-index: 20;
+  }
+
+  .ui-toggle-btn {
+    height: 44px;
+    padding: 0 14px;
+    font-size: 13px;
   }
 
   /* 타이머만 크게 좌상단 */
@@ -575,7 +586,7 @@ body {
     display: none;
   }
 
-  /* 모바일 컨트롤 위치: 화면 하단 꽉 채우게 */
+  /* 모바일 컨트롤 위치: 화면 하단 */
   .mobile-controls {
     inset: auto 12px 24px 12px;
   }

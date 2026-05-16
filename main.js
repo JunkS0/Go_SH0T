@@ -2057,7 +2057,7 @@ function initMobileControls() {
   canvas.addEventListener("pointermove", (event) => {
     if (event.pointerId !== mobileLook.activeId) return;
     event.preventDefault();
-    const sensitivity = player.scoped ? (weapons[weaponIndex].name === "저격" ? 0.001 : 0.0015) : 0.0026;
+    const sensitivity = player.scoped ? (weapons[weaponIndex].name === "저격" ? 0.002 : 0.003) : 0.005;
     player.yaw -= (event.clientX - mobileLook.lastX) * sensitivity;
     player.pitch -= (event.clientY - mobileLook.lastY) * sensitivity;
     player.pitch = THREE.MathUtils.clamp(player.pitch, -1.32, 1.32);
