@@ -1,10 +1,25 @@
 import * as THREE from "./vendor/three.module.js";
 
 const canvas = document.querySelector("#scene");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
+let renderer;
+
+function showBootProblem(message) {
+  const notice = document.querySelector("#bootNotice");
+  if (!notice) return;
+  notice.classList.add("error");
+  notice.querySelector("strong").textContent = "게임을 시작할 수 없습니다";
+  notice.querySelector("span").textContent = message;
+}
+
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+} catch (error) {
+  showBootProblem("브라우저의 WebGL이 꺼져 있거나 지원되지 않습니다. Chrome/Edge에서 하드웨어 가속을 켠 뒤 다시 열어주세요.");
+  throw error;
+}
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x2a1918);
@@ -85,6 +100,7 @@ const ui = {
   mobileAim: document.querySelector("#mobileAim"),
   mobileJump: document.querySelector("#mobileJump"),
   mobilePlant: document.querySelector("#mobilePlant"),
+  bootNotice: document.querySelector("#bootNotice"),
 };
 
 const weapons = [
@@ -192,6 +208,7 @@ const player = {
   grounded: true,
   lastShot: 0,
   money: 800,
+  killCount: 0,
   owned: new Set(["칼"]),
   team: "attack",
 };
@@ -707,6 +724,7 @@ function initUi() {
   selectWeapon(0, true);
   setNetStatus("solo", "혼자 연습");
   startPrep();
+  if (ui.bootNotice) ui.bootNotice.style.display = "none";
   log("준비 시간에만 총과 갑옷 구매 가능. 킬 보상은 $200입니다.");
   if (new URLSearchParams(location.search).get("server")) connectMultiplayer(savedServer);
 }
@@ -789,6 +807,11 @@ function refreshWeaponCards() {
 
 function addMoney(amount) {
   player.money = Math.min(MONEY_CAP, player.money + amount);
+}
+
+function registerPlayerKill() {
+  player.killCount += 1;
+  playKillMelody(player.killCount);
 }
 
 function addBotMoney(amount) {
@@ -1103,6 +1126,7 @@ function handleServerHit(message) {
   }
   if (message.sourceId === player.id && message.dead) {
     addMoney(KILL_MONEY);
+    registerPlayerKill();
     log(`멀티플레이 적 처치. +$${KILL_MONEY}`);
   }
 }
@@ -1118,6 +1142,40 @@ function resize() {
 function startAudio() {
   if (!audioContext) audioContext = new AudioContext();
   if (audioContext.state === "suspended") audioContext.resume();
+}
+
+function playTone(frequency, start, length = 0.18) {
+  if (!audioContext) return;
+  const osc = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(frequency, start);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(0.22, start + 0.018);
+  gain.gain.exponentialRampToValueAtTime(0.001, start + length);
+  osc.connect(gain).connect(audioContext.destination);
+  osc.start(start);
+  osc.stop(start + length + 0.03);
+}
+
+function playKillMelody(killCount) {
+  if (!audioContext) return;
+  const notes = {
+    mi: 329.63,
+    faSharp: 369.99,
+    sol: 392,
+    la: 440,
+  };
+  const patterns = {
+    1: [notes.mi],
+    2: [notes.faSharp],
+    3: [notes.sol],
+    4: [notes.la],
+    5: [notes.mi, notes.mi, notes.mi, notes.sol],
+  };
+  const pattern = patterns[Math.min(killCount, 5)];
+  const now = audioContext.currentTime + 0.04;
+  pattern.forEach((frequency, index) => playTone(frequency, now + index * 0.16, 0.13));
 }
 
 function playSound(type) {
@@ -1258,6 +1316,7 @@ function applyDamageTarget(target, damage, weaponName, distance, backstab = fals
       bot.alive = false;
       bot.group.visible = false;
       addMoney(KILL_MONEY);
+      registerPlayerKill();
       log(`${weaponName} ${zoneName} ${Math.round(damage)} 피해: ${bot.name} 처치 +$${KILL_MONEY}`);
     } else {
       log(`${weaponName} ${zoneName} ${Math.round(damage)} 피해 · ${bot.name} 남은 체력 ${Math.ceil(bot.hp)}`);
