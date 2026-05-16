@@ -30,10 +30,41 @@ const camera = new THREE.PerspectiveCamera(74, 1, 0.1, 260);
 camera.rotation.order = "YXZ";
 
 const textureLoader = new THREE.TextureLoader();
-const characterTexture = textureLoader.load("./assets/character.png");
-characterTexture.colorSpace = THREE.SRGBColorSpace;
 const enemyTexture = textureLoader.load("./assets/enemy.png");
 enemyTexture.colorSpace = THREE.SRGBColorSpace;
+
+function makeTeamTexture(borderColor) {
+  const size = 256;
+  const border = 18;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const img = new Image();
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  img.onload = () => {
+    ctx.clearRect(0, 0, size, size);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size / 2 - border / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(img, 0, 0, size, size);
+    ctx.restore();
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size / 2 - border / 2, 0, Math.PI * 2);
+    ctx.lineWidth = border;
+    ctx.strokeStyle = borderColor;
+    ctx.stroke();
+    tex.needsUpdate = true;
+  };
+  img.src = "./assets/character.png";
+  return tex;
+}
+
+const teammateTexture = makeTeamTexture("#2266ff");
+const enemyRemoteTexture = makeTeamTexture("#ff2222");
 
 const clock = new THREE.Clock();
 const raycaster = new THREE.Raycaster();
@@ -676,14 +707,14 @@ function registerHitbox(mesh, type, id, zone) {
 
 function createCharacterModel(type, id) {
   const group = new THREE.Group();
-  // type: "bot"=적, "remote"=멀티플레이어(팀에 따라 구분은 updateRemote에서)
-  const tex = type === "bot" ? enemyTexture : characterTexture;
+  // remote는 처음엔 enemyRemoteTexture로 초기화, updateRemote에서 팀 확인 후 교체
+  const tex = type === "bot" ? enemyTexture : enemyRemoteTexture;
   const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
   const sprite = new THREE.Sprite(spriteMat);
   sprite.position.y = 1.95;
   sprite.scale.set(2.35, 3.25, 1);
   group.add(sprite);
-  group.userData.sprite = sprite; // 나중에 색 바꾸기 위해 저장
+  group.userData.sprite = sprite;
 
   const body = new THREE.Mesh(new THREE.BoxGeometry(1.25, 1.5, 0.8), mats.invisible);
   body.position.y = 1.15;
@@ -1416,11 +1447,16 @@ function updateRemote(id, state, name = "Player") {
     remote.group.rotation.x = 0;
     remote.group.visible = true;
   }
-  // 팀원=파란색, 적=빨간색으로 스프라이트 색 구분
+  // 팀원=파란테두리 이미지, 적=빨간테두리 이미지로 구분
   const sprite = remote.group.userData.sprite;
   if (sprite) {
     const isTeammate = remote.team === player.team;
-    sprite.material.color.set(isTeammate ? 0x4488ff : 0xff3333);
+    const newTex = isTeammate ? teammateTexture : enemyRemoteTexture;
+    if (sprite.material.map !== newTex) {
+      sprite.material.map = newTex;
+      sprite.material.color.set(0xffffff);
+      sprite.material.needsUpdate = true;
+    }
   }
   remote.group.position.set(state.x ?? 0, LEVEL_Y[remote.level] ?? 0, state.z ?? 0);
   remote.group.rotation.y = state.yaw ?? 0;
