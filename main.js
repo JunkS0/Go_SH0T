@@ -250,6 +250,8 @@ let socket;
 let networkStatus = "solo";
 let lastNetSend = 0;
 let localDeathModel = null;
+let matchmakingCountdown = 0; // 매칭 후 카운트다운 (초)
+let matchmakingTimer = null;  // 카운트다운 타이머
 const heldWeaponRoot = new THREE.Group();
 const heldWeaponModels = new Map();
 const prepBarrierGroup = new THREE.Group();
@@ -1103,6 +1105,38 @@ function normalizeServerUrl(rawUrl) {
   return url.replace(/\/$/, "");
 }
 
+function startMatchmakingCountdown() {
+  // 기존 타이머 취소
+  if (matchmakingTimer) {
+    clearInterval(matchmakingTimer);
+    matchmakingTimer = null;
+  }
+  matchmakingCountdown = 10;
+  log(`매칭 성공! ${matchmakingCountdown}초 후 게임이 시작됩니다.`);
+
+  matchmakingTimer = setInterval(() => {
+    matchmakingCountdown -= 1;
+    if (matchmakingCountdown > 0) {
+      log(`게임 시작까지 ${matchmakingCountdown}초...`);
+    } else {
+      clearInterval(matchmakingTimer);
+      matchmakingTimer = null;
+      matchmakingCountdown = 0;
+      log("게임 시작!");
+      // 준비 단계면 즉시 전투 시작, 아니면 새 라운드로
+      if (match.phase === "prep") {
+        startCombat();
+      } else {
+        match.round = 1;
+        match.playerScore = 0;
+        match.enemyScore = 0;
+        match.ended = false;
+        startPrep();
+      }
+    }
+  }, 1000);
+}
+
 function connectMultiplayer(rawUrl) {
   const url = normalizeServerUrl(rawUrl);
   if (!url) {
@@ -1173,10 +1207,14 @@ function handleNetMessage(message) {
     message.players.forEach((entry) => {
       if (entry.id !== player.id) ensureRemote(entry.id, entry);
     });
+    // 매칭 성공 시 10초 카운트다운 시작
+    startMatchmakingCountdown();
   }
   if (message.type === "player-joined" && message.id !== player.id) {
     ensureRemote(message.id, message);
     log(`${message.name} 입장.`);
+    // 새 플레이어 입장 시 10초 카운트다운 재시작
+    startMatchmakingCountdown();
   }
   if (message.type === "state" && message.id !== player.id) updateRemote(message.id, message.state, message.name);
   if (message.type === "left") removeRemote(message.id);
@@ -1240,11 +1278,11 @@ function updateRemote(id, state, name = "Player") {
     remote.group.rotation.x = 0;
     remote.group.visible = true;
   }
-  // 팀원=초록, 적=빨강으로 스프라이트 색 구분
+  // 팀원=파란색, 적=빨간색으로 스프라이트 색 구분
   const sprite = remote.group.userData.sprite;
   if (sprite) {
     const isTeammate = remote.team === player.team;
-    sprite.material.color.set(isTeammate ? 0x88ff88 : 0xff6666);
+    sprite.material.color.set(isTeammate ? 0x4488ff : 0xff3333);
   }
   remote.group.position.set(state.x ?? 0, LEVEL_Y[remote.level] ?? 0, state.z ?? 0);
   remote.group.rotation.y = state.yaw ?? 0;
@@ -1853,6 +1891,8 @@ function updateHud(time) {
   ui.money.textContent = `$${player.money}`;
   ui.timer.textContent = match.ended
     ? "--"
+    : matchmakingCountdown > 0
+    ? `매칭 ${matchmakingCountdown}초`
     : String(match.bombPlanted ? Math.max(0, Math.ceil(match.bombEnd - time)) : secondsLeft);
   ui.shopHint.textContent = match.phase === "prep" ? "준비 시간: 총과 갑옷 구매 가능" : "전투 중: 구매 불가";
   const crossLevelThreat = bots.some((bot) => bot.alive && bot.level !== player.level) || [...remotePlayers.values()].some((remote) => remote.alive && remote.level !== player.level);
