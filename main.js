@@ -1070,7 +1070,10 @@ function startPrep() {
   player.skills.dash.invincible = false;
   player.skills.dash.endAt = 0;
   player.skills.ascend.charges = player.skills.ascend.maxCharges;
-  bots.forEach(respawnBot);
+  bots.forEach((bot) => {
+    respawnBot(bot);
+    bot.group.visible = networkStatus !== "online";
+  });
   buyAiLoadouts();
   refreshWeaponCards();
   log(`${match.round}라운드 준비 시작. 시작 지점 안에서만 구매할 수 있습니다.`);
@@ -1136,7 +1139,7 @@ function advanceRoundIfNeeded(time) {
     const combatElapsed = time - (match.combatStarted ?? time);
     const graceOver = !player.alive && combatElapsed > 1.5;
     if (graceOver && (!getAliveTeammate() || networkStatus !== "online")) finishRound(false, "플레이어 전멸");
-    else if (bots.every((bot) => !bot.alive)) finishRound(true, "적 전멸");
+    else if (networkStatus !== "online" && bots.every((bot) => !bot.alive)) finishRound(true, "적 전멸");
     else if (time >= match.phaseEnd) finishRound(false, "시간 종료");
   }
   if (match.phase === "post" && time >= match.phaseEnd) {
@@ -1157,6 +1160,9 @@ function setNetStatus(status, text) {
   ui.net.textContent = text;
   ui.net.classList.toggle("online", status === "online");
   ui.net.classList.toggle("offline", status === "offline");
+  // 멀티 연결 시 봇 숨김, 솔로 전환 시 봇 표시
+  const botsVisible = status !== "online";
+  bots.forEach((bot) => { bot.group.visible = botsVisible && bot.alive; });
 }
 
 function getInitialServerUrl() {
@@ -1952,6 +1958,7 @@ function plantBomb() {
 }
 
 function updateBots(time) {
+  if (networkStatus === "online") return;
   bots.forEach((bot, index) => {
     if (!bot.alive) return;
 
