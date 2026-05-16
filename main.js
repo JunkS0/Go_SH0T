@@ -252,6 +252,7 @@ let lastNetSend = 0;
 let localDeathModel = null;
 let matchmakingCountdown = 0; // 매칭 후 카운트다운 (초)
 let matchmakingTimer = null;  // 카운트다운 타이머
+let gameLoopStarted = false;  // animate() 중복 실행 방지
 const heldWeaponRoot = new THREE.Group();
 const heldWeaponModels = new Map();
 const prepBarrierGroup = new THREE.Group();
@@ -817,10 +818,9 @@ function initUi() {
   ui.connect.addEventListener("click", () => connectMultiplayer(ui.serverUrl.value));
   selectWeapon(0, true);
   setNetStatus("solo", "혼자 연습");
-  startPrep();
   if (ui.bootNotice) ui.bootNotice.style.display = "none";
+  // startPrep은 게임 시작 시점에 호출됨
   log("준비 시간에만 총과 갑옷 구매 가능. 킬 보상은 $200입니다.");
-  if (new URLSearchParams(location.search).get("server")) connectMultiplayer(savedServer);
 }
 
 function handleWeaponSlot(index) {
@@ -1105,34 +1105,162 @@ function normalizeServerUrl(rawUrl) {
   return url.replace(/\/$/, "");
 }
 
+// ===== 매칭 화면 UI 초기화 (DOM 준비 후 실행) =====
+function initMatchmakingScreen() {
+  const mmScreen = document.getElementById("matchmakingScreen");
+  const mmStatus = document.getElementById("mmStatus");
+  const mmStatusDot = document.getElementById("mmStatusDot");
+  const mmAttackList = document.getElementById("mmAttackList");
+  const mmDefenseList = document.getElementById("mmDefenseList");
+  const mmAttackCount = document.getElementById("mmAttackCount");
+  const mmDefenseCount = document.getElementById("mmDefenseCount");
+  const mmCountdownWrap = document.getElementById("mmCountdownWrap");
+  const mmCountdownNum = document.getElementById("mmCountdownNum");
+  const mmRingFill = document.getElementById("mmRingFill");
+  const mmWaitingPulse = document.getElementById("mmWaitingPulse");
+  const mmConnectBtn = document.getElementById("mmConnectBtn");
+  const mmSoloBtn = document.getElementById("mmSoloBtn");
+  const mmServerUrlInput = document.getElementById("mmServerUrl");
+  const mmTeamModeSelect = document.getElementById("mmTeamMode");
+
+  // 저장된 값 복원
+  const savedServer = getInitialServerUrl();
+  if (mmServerUrlInput) mmServerUrlInput.value = savedServer;
+  if (mmTeamModeSelect) mmTeamModeSelect.value = localStorage.getItem("kotgunTeamMode") || "versus";
+
+  function mmSetStatus(text, dotClass) {
+    if (mmStatus) mmStatus.textContent = text;
+    if (mmStatusDot) {
+      mmStatusDot.className = "mm-status-dot";
+      if (dotClass) mmStatusDot.classList.add(dotClass);
+    }
+  }
+
+  function mmUpdatePlayerLists() {
+    const allPlayers = [];
+    if (player.id) allPlayers.push({ id: player.id, name: player.name, team: player.team, isMe: true });
+    remotePlayers.forEach((r) => allPlayers.push({ id: r.id, name: r.name, team: r.team, isMe: false }));
+
+    const attack = allPlayers.filter((p) => p.team === "attack");
+    const defense = allPlayers.filter((p) => p.team === "defense");
+
+    function renderList(el, list, team) {
+      if (!el) return;
+      el.innerHTML = "";
+      if (list.length === 0) {
+        el.innerHTML = `<div class="mm-slot mm-slot--empty">대기 중...</div>`;
+        return;
+      }
+      list.forEach((p) => {
+        const div = document.createElement("div");
+        div.className = `mm-slot mm-slot--${team}${p.isMe ? " mm-slot--me" : ""}`;
+        div.innerHTML = `
+          <div class="mm-slot-avatar">${p.isMe ? "👤" : "🎮"}</div>
+          <div class="mm-slot-info">
+            <div class="mm-slot-name">${p.name}</div>
+            <div class="mm-slot-tag">${p.isMe ? "나" : "플레이어"}</div>
+          </div>`;
+        el.appendChild(div);
+      });
+    }
+    renderList(mmAttackList, attack, "attack");
+    renderList(mmDefenseList, defense, "defense");
+    if (mmAttackCount) mmAttackCount.textContent = `${attack.length}명`;
+    if (mmDefenseCount) mmDefenseCount.textContent = `${defense.length}명`;
+  }
+
+  // 매칭 화면을 전역에서 접근할 수 있도록 저장
+  window._mmUpdatePlayerLists = mmUpdatePlayerLists;
+  window._mmSetStatus = mmSetStatus;
+
+  function launchGameFromMM() {
+    if (!mmScreen) return;
+    mmScreen.classList.add("fade-out");
+    setTimeout(() => {
+      mmScreen.classList.add("hidden");
+      const gameEl = document.getElementById("game");
+      const toggleGroup = document.getElementById("uiToggleGroup");
+      if (gameEl) gameEl.style.display = "block";
+      if (toggleGroup) toggleGroup.style.display = "flex";
+      resize();
+      startAudio();
+      if (!gameLoopStarted) { gameLoopStarted = true; animate(); }
+    }, 600);
+  }
+  window._launchGameFromMM = launchGameFromMM;
+
+  // 매칭 버튼
+  if (mmConnectBtn) {
+    mmConnectBtn.addEventListener("click", () => {
+      const url = mmServerUrlInput?.value?.trim() || "";
+      if (!url) { mmSetStatus("서버 주소를 입력하세요", "error"); return; }
+      if (mmTeamModeSelect) {
+        localStorage.setItem("kotgunTeamMode", mmTeamModeSelect.value);
+        ui.teamMode.value = mmTeamModeSelect.value;
+      }
+      mmSetStatus("서버에 연결 중...", "connecting");
+      mmConnectBtn.disabled = true;
+      if (mmWaitingPulse) mmWaitingPulse.style.display = "flex";
+      connectMultiplayer(url);
+    });
+  }
+
+  // 혼자 연습
+  if (mmSoloBtn) {
+    mmSoloBtn.addEventListener("click", () => {
+      launchGameFromMM();
+      setTimeout(() => {
+        setNetStatus("solo", "혼자 연습");
+        startPrep();
+        log("AI와 혼자 연습 모드입니다.");
+      }, 700);
+    });
+  }
+}
+
 function startMatchmakingCountdown() {
-  // 기존 타이머 취소
   if (matchmakingTimer) {
     clearInterval(matchmakingTimer);
     matchmakingTimer = null;
   }
   matchmakingCountdown = 10;
-  log(`매칭 성공! ${matchmakingCountdown}초 후 게임이 시작됩니다.`);
+
+  const mmCountdownWrap = document.getElementById("mmCountdownWrap");
+  const mmCountdownNum = document.getElementById("mmCountdownNum");
+  const mmRingFill = document.getElementById("mmRingFill");
+  const mmWaitingPulse = document.getElementById("mmWaitingPulse");
+  const CIRCUMFERENCE = 2 * Math.PI * 34;
+
+  if (mmCountdownWrap) mmCountdownWrap.classList.add("active");
+  if (mmWaitingPulse) mmWaitingPulse.style.display = "none";
+
+  function updateRing(sec) {
+    if (mmCountdownNum) mmCountdownNum.textContent = sec;
+    if (mmRingFill) mmRingFill.style.strokeDashoffset = CIRCUMFERENCE * (1 - sec / 10);
+  }
+
+  updateRing(matchmakingCountdown);
+  if (window._mmSetStatus) window._mmSetStatus(`${matchmakingCountdown}초 후 게임이 시작됩니다`, "online");
+  if (window._mmUpdatePlayerLists) window._mmUpdatePlayerLists();
 
   matchmakingTimer = setInterval(() => {
     matchmakingCountdown -= 1;
-    if (matchmakingCountdown > 0) {
-      log(`게임 시작까지 ${matchmakingCountdown}초...`);
-    } else {
+    updateRing(matchmakingCountdown);
+    if (window._mmSetStatus) window._mmSetStatus(`${matchmakingCountdown}초 후 게임이 시작됩니다`, "online");
+
+    if (matchmakingCountdown <= 0) {
       clearInterval(matchmakingTimer);
       matchmakingTimer = null;
-      matchmakingCountdown = 0;
-      log("게임 시작!");
-      // 준비 단계면 즉시 전투 시작, 아니면 새 라운드로
-      if (match.phase === "prep") {
-        startCombat();
-      } else {
+      if (window._mmSetStatus) window._mmSetStatus("게임 시작!", "online");
+      if (window._launchGameFromMM) window._launchGameFromMM();
+      setTimeout(() => {
         match.round = 1;
         match.playerScore = 0;
         match.enemyScore = 0;
         match.ended = false;
         startPrep();
-      }
+        log("멀티플레이 게임 시작!");
+      }, 700);
     }
   }, 1000);
 }
@@ -1152,6 +1280,7 @@ function connectMultiplayer(rawUrl) {
     if (socket !== ws) return;
     setNetStatus("online", "멀티 연결");
     sendNet("join", { name: player.name, armor: player.armor, teamMode: ui.teamMode.value, state: makeNetworkState() });
+    if (window._mmSetStatus) window._mmSetStatus("서버 연결 성공! 플레이어 대기 중...", "online");
     log("멀티플레이 서버 연결 성공.");
   });
   ws.addEventListener("message", (event) => {
@@ -1166,11 +1295,18 @@ function connectMultiplayer(rawUrl) {
     if (socket !== ws) return;
     setNetStatus("offline", "서버 끊김");
     remotePlayers.forEach((remote) => removeRemote(remote.id));
+    // 매칭 화면이 아직 보이면 상태 업데이트
+    const mmBtn = document.getElementById("mmConnectBtn");
+    if (mmBtn) mmBtn.disabled = false;
+    if (window._mmSetStatus) window._mmSetStatus("서버 연결이 끊겼습니다", "error");
     log("멀티플레이 서버 연결이 끊겼습니다.");
   });
   ws.addEventListener("error", () => {
     if (socket !== ws) return;
     setNetStatus("offline", "연결 실패");
+    const mmBtn = document.getElementById("mmConnectBtn");
+    if (mmBtn) mmBtn.disabled = false;
+    if (window._mmSetStatus) window._mmSetStatus("연결 실패. 서버 주소를 확인하세요", "error");
     log("서버 연결 실패. Render 주소가 맞는지 확인하세요.");
   });
 }
@@ -1208,12 +1344,14 @@ function handleNetMessage(message) {
       if (entry.id !== player.id) ensureRemote(entry.id, entry);
     });
     // 매칭 성공 시 10초 카운트다운 시작
+    if (window._mmUpdatePlayerLists) window._mmUpdatePlayerLists();
     startMatchmakingCountdown();
   }
   if (message.type === "player-joined" && message.id !== player.id) {
     ensureRemote(message.id, message);
     log(`${message.name} 입장.`);
-    // 새 플레이어 입장 시 10초 카운트다운 재시작
+    // 새 플레이어 입장 시 매칭 화면 갱신 + 10초 카운트다운 재시작
+    if (window._mmUpdatePlayerLists) window._mmUpdatePlayerLists();
     startMatchmakingCountdown();
   }
   if (message.type === "state" && message.id !== player.id) updateRemote(message.id, message.state, message.name);
@@ -2212,6 +2350,7 @@ setupBots();
 initHeldWeaponView();
 initMobileControls();
 initUi();
+initMatchmakingScreen();
 resize();
 camera.position.copy(player.position);
-animate();
+// animate()는 게임 시작 시 launchGameFromMM 내에서 호출됨

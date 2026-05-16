@@ -14,7 +14,74 @@
     </script>
   </head>
   <body>
-    <div id="game">
+
+    <!-- ====== 매칭 대기 화면 ====== -->
+    <div id="matchmakingScreen">
+      <div class="mm-bg-grid"></div>
+      <div class="mm-scanline"></div>
+      <div class="mm-content">
+
+        <div class="mm-logo">고총 전술전<span class="mm-logo-sub">TACTICAL</span></div>
+
+        <div class="mm-status-bar">
+          <span class="mm-status-dot" id="mmStatusDot"></span>
+          <span id="mmStatus">서버 주소를 입력하고 매칭을 시작하세요</span>
+        </div>
+
+        <div class="mm-teams">
+          <div class="mm-team mm-team--attack">
+            <div class="mm-team-header">
+              <span class="mm-team-icon">⚔</span>
+              <span class="mm-team-name">공격팀</span>
+              <span class="mm-team-count" id="mmAttackCount">0명</span>
+            </div>
+            <div class="mm-player-list" id="mmAttackList"></div>
+          </div>
+
+          <div class="mm-center-col">
+            <div class="mm-vs-badge">VS</div>
+            <div class="mm-countdown-wrap" id="mmCountdownWrap">
+              <svg class="mm-ring-svg" viewBox="0 0 80 80">
+                <circle cx="40" cy="40" r="34" class="mm-ring-bg"/>
+                <circle cx="40" cy="40" r="34" class="mm-ring-fill" id="mmRingFill"/>
+              </svg>
+              <span class="mm-countdown-num" id="mmCountdownNum">10</span>
+              <div class="mm-countdown-label">초 후 시작</div>
+            </div>
+            <div class="mm-waiting-pulse" id="mmWaitingPulse">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+
+          <div class="mm-team mm-team--defense">
+            <div class="mm-team-header">
+              <span class="mm-team-icon">🛡</span>
+              <span class="mm-team-name">수비팀</span>
+              <span class="mm-team-count" id="mmDefenseCount">0명</span>
+            </div>
+            <div class="mm-player-list" id="mmDefenseList"></div>
+          </div>
+        </div>
+
+        <div class="mm-server-section">
+          <div class="mm-server-row">
+            <input id="mmServerUrl" type="text" placeholder="wss://your-server.onrender.com" autocomplete="off" />
+            <button id="mmConnectBtn" type="button">매칭 시작</button>
+          </div>
+          <select id="mmTeamMode" class="mm-select">
+            <option value="versus">공격/수비 팀 나누기</option>
+            <option value="same">같은 팀으로 협력</option>
+          </select>
+        </div>
+
+        <div class="mm-or-row"><span>또는</span></div>
+        <button id="mmSoloBtn" type="button" class="mm-solo-btn">혼자 연습 (AI 상대)</button>
+
+      </div>
+    </div>
+
+    <!-- ====== 게임 화면 ====== -->
+    <div id="game" style="display:none">
       <canvas id="scene"></canvas>
 
       <div id="hud">
@@ -79,7 +146,7 @@
         </div>
 
         <button id="startButton" type="button">
-          <span>클릭해서 시작</span>
+          <span>클릭해서 계속</span>
           <small>WASD 이동 · Space 점프 · 마우스 조준 · 좌클릭 공격 · 우클릭 조준/강공격 · F 폭탄 설치 · E 엘리베이터 · 휠 버튼 UI · 1-6 무기 선택/구매</small>
         </button>
 
@@ -97,8 +164,8 @@
       </div>
     </div>
 
-    <!-- 토글 버튼: #hud 바깥, 항상 위에 표시 -->
-    <div class="ui-toggle-group">
+    <!-- 토글 버튼: 게임 중에만 표시 -->
+    <div class="ui-toggle-group" id="uiToggleGroup" style="display:none">
       <button class="ui-toggle-btn" id="toggleWeapons" type="button">🔫 무기</button>
       <button class="ui-toggle-btn" id="toggleServer" type="button">🌐 서버</button>
       <button class="ui-toggle-btn" id="toggleShop" type="button">🛒 상점</button>
