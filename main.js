@@ -1132,15 +1132,45 @@ function isMatchOver() {
   return false;
 }
 
+function getAlivePlayers() {
+  // 내 팀: 나 + 살아있는 팀원 remote
+  const myTeamAlive = (player.alive ? 1 : 0)
+    + [...remotePlayers.values()].filter(r => r.alive && r.team === player.team).length;
+  // 상대팀: 살아있는 적 remote
+  const enemyTeamAlive = [...remotePlayers.values()].filter(r => r.alive && r.team !== player.team).length;
+  return { myTeamAlive, enemyTeamAlive };
+}
+
 function advanceRoundIfNeeded(time) {
   if (match.ended) return;
   if (match.phase === "prep" && time >= match.phaseEnd) startCombat();
   if (match.phase === "combat") {
     const combatElapsed = time - (match.combatStarted ?? time);
-    const graceOver = !player.alive && combatElapsed > 1.5;
-    if (graceOver && (!getAliveTeammate() || networkStatus !== "online")) finishRound(false, "플레이어 전멸");
-    else if (networkStatus !== "online" && bots.every((bot) => !bot.alive)) finishRound(true, "적 전멸");
-    else if (time >= match.phaseEnd) finishRound(false, "시간 종료");
+    if (networkStatus === "online") {
+      // 멀티 모드: 팀 구성 파악
+      const { myTeamAlive, enemyTeamAlive } = getAlivePlayers();
+      const myTotal   = 1 + [...remotePlayers.values()].filter(r => r.team === player.team).length;
+      const eneTotal  = [...remotePlayers.values()].filter(r => r.team !== player.team).length;
+      const is1v1     = myTotal === 1 && eneTotal === 1;
+      if (combatElapsed > 1.5) {
+        if (is1v1) {
+          // 1v1: 한 명이라도 죽으면 즉시 라운드 종료
+          if (!player.alive) finishRound(false, "상대에게 처치됨");
+          else if (enemyTeamAlive === 0) finishRound(true, "적 처치");
+        } else {
+          // n대n: 한 팀이 전멸해야 라운드 종료
+          if (myTeamAlive === 0) finishRound(false, "아군 전멸");
+          else if (enemyTeamAlive === 0) finishRound(true, "적 전멸");
+        }
+      }
+    } else {
+      // 솔로 모드: 기존 봇 기반 판정
+      const combatElapsed2 = combatElapsed;
+      const graceOver = !player.alive && combatElapsed2 > 1.5;
+      if (graceOver) finishRound(false, "플레이어 전멸");
+      else if (bots.every((bot) => !bot.alive)) finishRound(true, "적 전멸");
+    }
+    if (time >= match.phaseEnd) finishRound(false, "시간 종료");
   }
   if (match.phase === "post" && time >= match.phaseEnd) {
     match.round += 1;
