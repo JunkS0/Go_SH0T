@@ -226,6 +226,7 @@ const match = {
   enemyScore: 0,
   phase: "prep",
   phaseEnd: performance.now() / 1000 + PREP_SECONDS,
+  combatStarted: 0,
   losingStreak: 0,
   ended: false,
   bombPlanted: false,
@@ -970,6 +971,7 @@ function startPrep() {
 function startCombat() {
   match.phase = "combat";
   match.phaseEnd = performance.now() / 1000 + COMBAT_SECONDS;
+  match.combatStarted = performance.now() / 1000;
   prepBarrierGroup.visible = false;
   refreshWeaponCards();
   log(`${match.round}라운드 전투 시작.`);
@@ -1018,7 +1020,9 @@ function advanceRoundIfNeeded(time) {
   if (match.ended) return;
   if (match.phase === "prep" && time >= match.phaseEnd) startCombat();
   if (match.phase === "combat") {
-    if (!player.alive && (!getAliveTeammate() || networkStatus !== "online")) finishRound(false, "플레이어 전멸");
+    const combatElapsed = time - (match.combatStarted ?? time);
+    const graceOver = !player.alive && combatElapsed > 1.5;
+    if (graceOver && (!getAliveTeammate() || networkStatus !== "online")) finishRound(false, "플레이어 전멸");
     else if (bots.every((bot) => !bot.alive)) finishRound(true, "적 전멸");
     else if (time >= match.phaseEnd) finishRound(false, "시간 종료");
   }
@@ -1450,16 +1454,36 @@ function respawnBot(bot) {
   bot.lastShot = 0;
 }
 
+const tracerPool = [];
+const TRACER_POOL_SIZE = 32;
+(function initTracerPool() {
+  for (let i = 0; i < TRACER_POOL_SIZE; i++) {
+    const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+    const mat = new THREE.LineBasicMaterial({ color: 0xffe1a3, transparent: true, opacity: 0.75 });
+    const line = new THREE.Line(geo, mat);
+    line.visible = false;
+    line.userData.inUse = false;
+    scene.add(line);
+    tracerPool.push(line);
+  }
+})();
+
 function drawTracer(originPayload, directionPayload, color) {
   const origin = payloadVector(originPayload);
   const direction = payloadVector(directionPayload).normalize();
-  const geometry = new THREE.BufferGeometry().setFromPoints([origin, origin.clone().addScaledVector(direction, 48)]);
-  const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.75 }));
-  scene.add(line);
+  const end = origin.clone().addScaledVector(direction, 48);
+  const line = tracerPool.find((l) => !l.userData.inUse);
+  if (!line) return;
+  const positions = line.geometry.attributes.position;
+  positions.setXYZ(0, origin.x, origin.y, origin.z);
+  positions.setXYZ(1, end.x, end.y, end.z);
+  positions.needsUpdate = true;
+  line.material.color.set(color);
+  line.visible = true;
+  line.userData.inUse = true;
   setTimeout(() => {
-    scene.remove(line);
-    geometry.dispose();
-    line.material.dispose();
+    line.visible = false;
+    line.userData.inUse = false;
   }, 85);
 }
 
@@ -1806,6 +1830,7 @@ function sendStateIfNeeded(time) {
 }
 
 function animate() {
+  requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.04);
   const elapsed = clock.elapsedTime;
   const now = performance.now() / 1000;
@@ -1821,7 +1846,6 @@ function animate() {
   updateHud(now);
   sendStateIfNeeded(elapsed);
   renderer.render(scene, camera);
-  requestAnimationFrame(animate);
 }
 
 function beginFire() {
