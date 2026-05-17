@@ -1077,8 +1077,8 @@ function startPrep() {
   player.skills.ascend.charges = player.skills.ascend.maxCharges;
   bots.forEach((bot) => {
     respawnBot(bot);
-    bot.group.visible = networkStatus !== "online";
   });
+  refreshBotsVisibility();
   buyAiLoadouts();
   refreshWeaponCards();
   log(`${match.round}라운드 준비 시작. 시작 지점 안에서만 구매할 수 있습니다.`);
@@ -1152,26 +1152,30 @@ function advanceRoundIfNeeded(time) {
   if (match.phase === "combat") {
     const combatElapsed = time - (match.combatStarted ?? time);
     if (networkStatus === "online") {
-      // 멀티 모드: 팀 구성 파악
-      const { myTeamAlive, enemyTeamAlive } = getAlivePlayers();
-      const myTotal   = 1 + [...remotePlayers.values()].filter(r => r.team === player.team).length;
-      const eneTotal  = [...remotePlayers.values()].filter(r => r.team !== player.team).length;
-      const is1v1     = myTotal === 1 && eneTotal === 1;
-      if (combatElapsed > 1.5) {
-        if (is1v1) {
-          // 1v1: 한 명이라도 죽으면 즉시 라운드 종료
-          if (!player.alive) finishRound(false, "상대에게 처치됨");
-          else if (enemyTeamAlive === 0) finishRound(true, "적 처치");
-        } else {
-          // n대n: 한 팀이 전멸해야 라운드 종료
-          if (myTeamAlive === 0) finishRound(false, "아군 전멸");
-          else if (enemyTeamAlive === 0) finishRound(true, "적 전멸");
+      if (ui.teamMode.value === "team") {
+        // 같은팀 멀티: 봇이 적 — 봇 기반 판정
+        const graceOver = !player.alive && combatElapsed > 1.5;
+        if (graceOver) finishRound(false, "플레이어 전멸");
+        else if (bots.every((bot) => !bot.alive)) finishRound(true, "적 전멸");
+      } else {
+        // versus 멀티: remote 플레이어 기반 판정
+        const { myTeamAlive, enemyTeamAlive } = getAlivePlayers();
+        const myTotal  = 1 + [...remotePlayers.values()].filter(r => r.team === player.team).length;
+        const eneTotal = [...remotePlayers.values()].filter(r => r.team !== player.team).length;
+        const is1v1 = myTotal === 1 && eneTotal === 1;
+        if (combatElapsed > 1.5) {
+          if (is1v1) {
+            if (!player.alive) finishRound(false, "상대에게 처치됨");
+            else if (enemyTeamAlive === 0) finishRound(true, "적 처치");
+          } else {
+            if (myTeamAlive === 0) finishRound(false, "아군 전멸");
+            else if (enemyTeamAlive === 0) finishRound(true, "적 전멸");
+          }
         }
       }
     } else {
-      // 솔로 모드: 기존 봇 기반 판정
-      const combatElapsed2 = combatElapsed;
-      const graceOver = !player.alive && combatElapsed2 > 1.5;
+      // 솔로 모드 또는 멀티 team 모드: 봇 기반 판정
+      const graceOver = !player.alive && combatElapsed > 1.5;
       if (graceOver) finishRound(false, "플레이어 전멸");
       else if (bots.every((bot) => !bot.alive)) finishRound(true, "적 전멸");
     }
@@ -1278,9 +1282,24 @@ function setNetStatus(status, text) {
   ui.net.textContent = text;
   ui.net.classList.toggle("online", status === "online");
   ui.net.classList.toggle("offline", status === "offline");
-  // 멀티 연결 시 봇 숨김, 솔로 전환 시 봇 표시
-  const botsVisible = status !== "online";
-  bots.forEach((bot) => { bot.group.visible = botsVisible && bot.alive; });
+  // 솔로: 봇 표시
+  // 멀티 versus(다른팀): 봇 숨김
+  // 멀티 team(같은팀): 봇 표시 (봇이 적 역할)
+  refreshBotsVisibility();
+}
+
+function shouldBotsBeActive() {
+  // 솔로: 항상 봇 활성
+  if (networkStatus !== "online") return true;
+  // 멀티 같은팀(team) 모드: 봇 활성 (봇이 적 역할)
+  if (ui.teamMode.value === "team") return true;
+  // 멀티 다른팀(versus) 모드: 봇 비활성
+  return false;
+}
+
+function refreshBotsVisibility() {
+  const active = shouldBotsBeActive();
+  bots.forEach((bot) => { bot.group.visible = active && bot.alive; });
 }
 
 function getInitialServerUrl() {
@@ -1758,10 +1777,7 @@ function getCurrentSpread(weapon) {
 }
 
 function shoot(heavy = false) {
-  if (!player.alive || match.phase !== "combat") {
-    if (match.phase === "prep") log("준비 시간에는 공격할 수 없습니다.");
-    return;
-  }
+  if (!player.alive) return;
   const weapon = weapons[weaponIndex];
   const now = performance.now() / 1000;
   const rate = weapon.name === "칼" && heavy ? weapon.heavyRate : weapon.rate;
